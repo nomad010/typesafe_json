@@ -426,21 +426,6 @@ namespace TypeSafeJSON
         }
     };
     
-    //         if(empty())
-//             return std::vector<std::string>(1, "[]");
-//         
-//         std::vector<std::string> result = std::vector<std::string>(1, "[");
-//         for(int i = 0; i < int(size()); ++i)
-//         {
-//             const std::vector<std::string>& rep = data()[i]->get_representation();
-//             for(int j = 0; j < int(rep.size()); ++j)
-//                 result.push_back("  " + rep[j]);
-//             
-//             if(i != int(size()) - 1)
-//                 result.back() += ",";
-//         }
-//         result.push_back("]");
-    
     template <typename T>
     class JSONHomogenousArray : public std::vector<T>
     {
