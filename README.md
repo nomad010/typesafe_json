@@ -20,8 +20,8 @@ At the moment only parsing from FILE* is permitted, but that will hopefully be r
 
 Planned features:
 
-Better support for more types for JSON Schema including schema output.
-Heterogenous lists.
-Parsing from other sources like strings and streams.
-Better Unicode support.
-C++03 support. This was my intention from the get go, but the implementation of JSONSet put a stop to that.
+* Better support for more types for JSON Schema including schema output.
+* Heterogenous lists.
+* Parsing from other sources like strings and streams.
+* Better Unicode support.
+* C++03 support. This was my intention from the get go, but the implementation of JSONSet put a stop to that.
