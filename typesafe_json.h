@@ -61,15 +61,16 @@ namespace TypeSafeJSON
             return -1;
     }
     
-    static void eat_whitespace(FILE* fptr)
+    template <typename Input>
+    static void eat_whitespace(Input& input)
     {
         while(true)
         {
-            int expected_ws = getc(fptr);
+            int expected_ws = input.getc();
             
             if(!isspace(expected_ws))
             {
-                ungetc(expected_ws, fptr);
+                input.ungetc(expected_ws);
                 break;
             }
         }
@@ -147,12 +148,17 @@ namespace TypeSafeJSON
     {
     private:
         std::string message;
+        int position;
         
     public:
-        BadJSONFormatException(std::string message = "Unspecified bad JSON format exception occurred") : message(message)
+        BadJSONFormatException(std::string message = "Unspecified bad JSON format exception occurred", int position = -1) : message(message), position(position)
         {
         }
         
+        virtual int get_position() const noexcept
+        {
+            return position;
+        }
         virtual const char* what() const noexcept
         {
             return message.c_str();
@@ -160,6 +166,86 @@ namespace TypeSafeJSON
         
         virtual ~BadJSONFormatException() throw ()
         {
+        }
+    };
+    
+    template <typename T>
+    class InputSource
+    {
+    };
+    
+    template <>
+    class InputSource<FILE*>
+    {
+    private:
+        FILE*& fptr;
+        
+    public:
+        InputSource(FILE*& in) : fptr(in)
+        {
+        }
+        
+        int getc()
+        {
+            return fgetc(fptr);
+        }
+        
+        void ungetc(int chr)
+        {
+            ::ungetc(chr, fptr);
+        }
+        
+        long double get_number()
+        {
+            long double x = 0;
+            int scan_result = fscanf(fptr, "%Lf", &x);
+            if(scan_result != 1)
+                throw BadJSONFormatException("Failed to parse number", tell());
+            return x;
+        }
+        
+        int tell()
+        {
+            return ftell(fptr);
+        }
+    };
+    
+    template <>
+    class InputSource<std::string>
+    {
+    private:
+        std::string& input;
+        int pos;
+        
+    public:
+        InputSource(std::string& in) : input(in), pos(0)
+        {
+        }
+        
+        int getc()
+        {
+            return (pos == int(input.size())) ? EOF : input[pos++];
+        }
+        
+        void ungetc(int chr)
+        {
+            --pos;
+        }
+        
+        long double get_number()
+        {
+            long double x = 0;
+            int length = 0;
+            int scan_result = sscanf(input.c_str() + pos, "%Lf%n", &x, &length);
+            pos += length;
+            if(scan_result != 1)
+                throw BadJSONFormatException("Failed to parse number", tell());
+            return x;
+        }
+        
+        int tell()
+        {
+            return pos;
         }
     };
     
@@ -182,16 +268,20 @@ namespace TypeSafeJSON
             return result;
         }
         
-        static JSONNumber parse(FILE* fptr)
+        template <typename Input>
+        static JSONNumber parse_impl(Input& input)
         {
             JSONNumber result;
-            int scan_result = fscanf(fptr, "%Lf", &result.value);
-            if(scan_result != 1)
-                throw BadJSONFormatException("Failed to parse number");
-            
+            result.value = input.get_number();
             return result;
         }
         
+        template <typename InputType>
+        static JSONNumber parse(InputType& input)
+        {
+            InputSource<InputType> source(input);
+            return JSONNumber::parse_impl(source);
+        }
     };
     
     
@@ -215,24 +305,25 @@ namespace TypeSafeJSON
             return result;
         }
         
-        static JSONString parse(FILE* fptr)
+        template <typename Input>
+        static JSONString parse_impl(Input& input)
         {
-            int expected_double_quote =  getc(fptr);
+            int expected_double_quote = input.getc();
             
             if(expected_double_quote != '"')
-                throw BadJSONFormatException("Expected opening double quote");
+                throw BadJSONFormatException("Expected opening double quote", input.tell());
             JSONString result;
             while(true)
             {
-                int chr = getc(fptr);
+                int chr = input.getc();
                 
                 if(iscntrl(chr))
-                    throw BadJSONFormatException("Control character found in string");
+                    throw BadJSONFormatException("Control character found in string", input.tell());
                 
                 
                 if(chr == '\\')
                 {
-                    int next_chr = getc(fptr);
+                    int next_chr = input.getc();
                     
                     if(next_chr == '"')
                     {
@@ -268,18 +359,18 @@ namespace TypeSafeJSON
                     }
                     else if(next_chr == 'u')
                     {
-                        int hex1 = getc(fptr);
+                        int hex1 = input.getc();
                         if(!isxdigit(hex1))
-                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code");
-                        int hex2 = getc(fptr);
+                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code", input.tell());
+                        int hex2 = input.getc();
                         if(!isxdigit(hex2))
-                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code");
-                        int hex3 = getc(fptr);
+                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code", input.tell());
+                        int hex3 = input.getc();
                         if(!isxdigit(hex3))
-                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code");
-                        int hex4 = getc(fptr);
+                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code", input.tell());
+                        int hex4 = input.getc();
                         if(!isxdigit(hex4))
-                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code");
+                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code", input.tell());
                         
                         unsigned int dec1 = hex_to_dec(hex1);
                         unsigned int dec2 = hex_to_dec(hex2);
@@ -289,7 +380,7 @@ namespace TypeSafeJSON
                         unsigned int dec = dec4 + 16*(dec3 + 16*(dec2 + 16*dec1));
                         
                         if(!is_valid_unicode(dec))
-                            throw BadJSONFormatException("Invalid unicode codepoint in escape code");
+                            throw BadJSONFormatException("Invalid unicode codepoint in escape code", input.tell());
                             
                         const std::string& chrs = codepoint_to_utf8(dec);
                         result += chrs;
@@ -297,7 +388,7 @@ namespace TypeSafeJSON
                     else
                     {
                         result.push_back('\\');
-                        ungetc('\\', fptr);
+                        input.ungetc('\\');
                     }
                 }
                 else if(chr == '"')
@@ -312,6 +403,13 @@ namespace TypeSafeJSON
             }
             
             return result;
+        }
+        
+        template <typename InputType>
+        static JSONString parse(InputType& input)
+        {
+            InputSource<FILE*> source(input);
+            return JSONString::parse_impl(source);
         }
     };
     
@@ -334,25 +432,33 @@ namespace TypeSafeJSON
             return result;
         }
         
-        static JSONNull parse(FILE* fptr)
+        template <typename Input>
+        static JSONNull parse_impl(Input& input)
         {
-            int expected_n =  getc(fptr);
+            int expected_n =  input.getc();
             if(expected_n != 'n')
-                throw BadJSONFormatException("Unrecognised null");
+                throw BadJSONFormatException("Unrecognised null", input.tell());
             
-            int expected_u =  getc(fptr);
+            int expected_u =  input.getc();
             if(expected_u != 'u')
-                throw BadJSONFormatException("Unrecognised null");
+                throw BadJSONFormatException("Unrecognised null", input.tell());
             
-            int expected_l1 =  getc(fptr);
+            int expected_l1 =  input.getc();
             if(expected_l1 != 'l')
-                throw BadJSONFormatException("Unrecognised null");
+                throw BadJSONFormatException("Unrecognised null", input.tell());
             
-            int expected_l2 =  getc(fptr);
+            int expected_l2 =  input.getc();
             if(expected_l2 != 'l')
-                throw BadJSONFormatException("Unrecognised null");
+                throw BadJSONFormatException("Unrecognised null", input.tell());
             
             return JSONNull();
+        }
+        
+        template <typename InputType>
+        static JSONNull parse(InputType& input)
+        {
+            InputSource<InputType> source(input);
+            return JSONNull::parse_impl(source);
         }
     };
     
@@ -375,54 +481,62 @@ namespace TypeSafeJSON
             return result;
         }
         
-        static JSONBool parse(FILE* fptr)
+        template <typename Input>
+        static JSONBool parse_impl(Input& input)
         {
             JSONBool result;
             
-            int expected_t_or_f =  getc(fptr);
+            int expected_t_or_f = input.getc();
             
             if(expected_t_or_f == 't')
             {
-                int expected_r = getc(fptr);
+                int expected_r = input.getc();
                 if(expected_r != 'r')
-                    throw BadJSONFormatException("Unrecognised boolean");
+                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
                 
-                int expected_u = getc(fptr);
+                int expected_u = input.getc();
                 if(expected_u != 'u')
-                    throw BadJSONFormatException("Unrecognised boolean");
+                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
                 
-                int expected_e = getc(fptr);
+                int expected_e = input.getc();
                 if(expected_e != 'e')
-                    throw BadJSONFormatException("Unrecognised boolean");
+                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
                 
                 result.value = true;
                 return result;
             }
             else if(expected_t_or_f == 'f')
             {
-                int expected_a = getc(fptr);
+                int expected_a = input.getc();
                 if(expected_a != 'a')
-                    throw BadJSONFormatException("Unrecognised boolean");
+                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
                 
-                int expected_l = getc(fptr);
+                int expected_l = input.getc();
                 if(expected_l != 'l')
-                    throw BadJSONFormatException("Unrecognised boolean");
+                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
                 
-                int expected_s = getc(fptr);
+                int expected_s = input.getc();
                 if(expected_s != 's')
-                    throw BadJSONFormatException("Unrecognised boolean");
+                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
                 
-                int expected_e = getc(fptr);
+                int expected_e = input.getc();
                 if(expected_e != 'e')
-                    throw BadJSONFormatException("Unrecognised boolean");
+                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
                 
                 result.value = false;
                 return result;
             }
             else
             {
-                throw BadJSONFormatException("Unrecognised boolean");
+                throw BadJSONFormatException("Unrecognised boolean", input.tell());
             }
+        }
+        
+        template <typename InputType>
+        static JSONBool parse(InputType& input)
+        {
+            InputSource<InputType> source(input);
+            return JSONBool::parse_impl(source);
         }
     };
     
@@ -465,34 +579,41 @@ namespace TypeSafeJSON
             return result;
         }
         
-        static JSONHomogenousArray<T> parse(FILE* fptr)
+        template <typename Input>
+        static JSONHomogenousArray<T> parse_impl(Input& input)
         {
             JSONHomogenousArray<T> result;
             
-            int expected_bracket = getc(fptr);
+            int expected_bracket = input.getc();
             
             if(expected_bracket != '[')
-                throw BadJSONFormatException("Expected opening brace");
-            eat_whitespace(fptr);
+                throw BadJSONFormatException("Expected opening brace", input.tell());
+            eat_whitespace(input);
             
             while(true)
             {
-                T entry = T::parse(fptr);
+                T entry = T::parse_impl(input);
                 
                 result.push_back(entry);
                 
-                int is_comma_or_close_bracket = fgetc(fptr);
+                int is_comma_or_close_bracket = input.getc();
                 
                 if(is_comma_or_close_bracket == ']')
                     break;
                 else if(is_comma_or_close_bracket != ',')
-                    throw BadJSONFormatException("Expected comma or closing bracket");
+                    throw BadJSONFormatException("Expected comma or closing bracket", input.tell());
                 
-                eat_whitespace(fptr);
+                eat_whitespace(input);
             }
             
             return result;
-            
+        }
+        
+        template <typename InputType>
+        static JSONHomogenousArray<T> parse(InputType& input)
+        {
+            InputSource<InputType> source(input);
+            return JSONHomogenousArray<T>::parse_impl(source);
         }
     };
     
@@ -503,16 +624,18 @@ namespace TypeSafeJSON
     class JSONSet<>
     {
     public:
-        static void parse_against_parameter(JSONSet<>& result, std::string parameter_name, FILE* fptr)
+        template <typename Input>
+        static void parse_against_parameter(JSONSet<>& result, std::string parameter_name, Input& input)
         {
-            throw BadJSONFormatException("Parameter was not found in structure: " + parameter_name);
+            throw BadJSONFormatException("Parameter was not found in structure: " + parameter_name, input.tell());
         }
         
         static void find_missing_parameters(std::vector<std::string>& missing_fields, std::unordered_set<std::string> seen_parameters)
         {
         }
         
-        static JSONSet<> parse(FILE* fptr)
+        template <typename Input>
+        static JSONSet<> parse_impl(Input& input)
         {
             return JSONSet<>();
         }
@@ -558,6 +681,13 @@ namespace TypeSafeJSON
         void get_into(T& val)
         {
         }
+        
+        template <typename InputType>
+        static JSONSet<> parse(InputType& input)
+        {
+            InputSource<InputType> source(input);
+            return JSONSet<>::parse_impl(source);
+        }
     };
     
     template <typename HeadType, typename... Rest> 
@@ -578,12 +708,13 @@ namespace TypeSafeJSON
             typename JSONSet<Rest...>::template ParameterType<chrs...>::Type>::type Type;
         };
         
-        static void parse_against_parameter(JSONSet<HeadType, Rest...>& result, std::string parameter_name, FILE* fptr)
+        template <typename Input>
+        static void parse_against_parameter(JSONSet<HeadType, Rest...>& result, std::string parameter_name, Input& input)
         {
             if(parameter_name == HeadType::name)
-                result.item = HeadType::Type::parse(fptr);
+                result.item = HeadType::Type::parse_impl(input);
             else
-                JSONSet<Rest...>::parse_against_parameter(result.rest, parameter_name, fptr);
+                JSONSet<Rest...>::parse_against_parameter(result.rest, parameter_name, input);
         }
         
         static void find_missing_parameters(std::vector<std::string>& missing_fields, std::unordered_set<std::string> seen_parameters)
@@ -594,54 +725,56 @@ namespace TypeSafeJSON
             JSONSet<Rest...>::find_missing_parameters(missing_fields, seen_parameters);
         }
         
-        static JSONSet<HeadType, Rest...> parse(FILE* fptr)
+        template <typename Input>
+        static JSONSet<HeadType, Rest...> parse_impl(Input& input)
         {
             JSONSet<HeadType, Rest...> result;
             std::unordered_set<std::string> seen_parameters;
             
-            char expected_brace = fgetc(fptr);
+            eat_whitespace(input);
+            char expected_brace = input.getc();
             if(expected_brace != '{')
-                throw BadJSONFormatException("Expected an opening brace");
+                throw BadJSONFormatException("Expected an opening brace", input.tell());
             
             bool is_first_run = true;
             while(true)
             {
-                eat_whitespace(fptr);
+                eat_whitespace(input);
                 if(!is_first_run)
                 {
-                    char expected_comma_or_brace = fgetc(fptr);
+                    char expected_comma_or_brace = input.getc();
                     if(expected_comma_or_brace != ',' && expected_comma_or_brace != '}')
-                        throw BadJSONFormatException("Expected a colon or comma");
+                        throw BadJSONFormatException("Expected a colon or comma", input.tell());
                     else if(expected_comma_or_brace == '}')
                         break;
                     
                 }
                 else
                 {
-                    int potential_brace = fgetc(fptr);
+                    int potential_brace = input.getc();
                     if(potential_brace == '}')
                         break;
                     
-                    ungetc(potential_brace, fptr);
+                    input.ungetc(potential_brace);
                 }
                 
                 
-                eat_whitespace(fptr);
+                eat_whitespace(input);
                 
-                JSONString field_name = JSONString::parse(fptr);
+                JSONString field_name = JSONString::parse_impl(input);
                 
                 if(seen_parameters.count(field_name) == 1)
-                    throw BadJSONFormatException("The following field was duplicated: " + field_name);
+                    throw BadJSONFormatException("The following field was duplicated: " + field_name, input.tell());
                 seen_parameters.insert(field_name);
                 
-                eat_whitespace(fptr);
-                char expected_colon = fgetc(fptr);
-                eat_whitespace(fptr);
+                eat_whitespace(input);
+                char expected_colon = input.getc();
+                eat_whitespace(input);
                 
                 if(expected_colon != ':')
-                    throw BadJSONFormatException("A colon was expected.");
+                    throw BadJSONFormatException("A colon was expected.", input.tell());
                 
-                JSONSet<HeadType, Rest...>::parse_against_parameter(result, field_name, fptr);
+                JSONSet<HeadType, Rest...>::parse_against_parameter(result, field_name, input);
                 
                 is_first_run = false;
             }
@@ -656,7 +789,7 @@ namespace TypeSafeJSON
                     fields += missing_fields[i] + ", ";
                 fields += missing_fields.back();
                 
-                throw BadJSONFormatException("The following fields were not found in the input: " + fields);
+                throw BadJSONFormatException("The following fields were not found in the input: " + fields, input.tell());
             }
             
             return result;
@@ -736,6 +869,13 @@ namespace TypeSafeJSON
                 result += lines[i] + "\n";
             
             return result;
+        }
+        
+        template <typename InputType>
+        static JSONSet<HeadType, Rest...> parse(InputType& input)
+        {
+            InputSource<InputType> source(input);
+            return JSONSet<HeadType, Rest...>::parse_impl(source);
         }
     };
 }

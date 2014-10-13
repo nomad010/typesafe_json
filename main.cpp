@@ -16,19 +16,25 @@ using namespace std;
 
 int main(int argc, char** argv)
 {
-    FILE* fptr = fopen("test.json", "r");
+//     FILE* fptr = fopen("test.json", "r");
+    
+    std::string json_string = R"json(
+{
+  "id": "428bf64f-a828-4f06-a6c2-98a23533093c",
+  "list": [1.0, 2.0, 3.0]
+})json";
     
     typedef JSONSet<NamedType<JSONString, str_to_list_2("id")>, NamedType<JSONHomogenousArray<JSONNumber>, str_to_list_4("list")>> JSONType;
     JSONType json;
     try
     {
-        json = JSONType::parse(fptr);
+        json = JSONType::parse(json_string);
     }
     catch(BadJSONFormatException& exception)
     {
-        printf("%s at %d\n", exception.what(), int(ftell(fptr)));
+        printf("%s at position %d\n", exception.what(), exception.get_position());
     }
-    fclose(fptr);
+//     fclose(fptr);
     
     printf("Read\n%s\n", json.as_json().c_str());
     
