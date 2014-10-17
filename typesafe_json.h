@@ -282,6 +282,12 @@ namespace TypeSafeJSON
             InputSource<InputType> source(input);
             return JSONNumber::parse_impl(source);
         }
+        
+        static std::string get_schema()
+        {
+            return "{\n  \"type\": \"number\"\n}";
+        }
+        
     };
     
     
@@ -411,6 +417,11 @@ namespace TypeSafeJSON
             InputSource<FILE*> source(input);
             return JSONString::parse_impl(source);
         }
+        
+        static std::string get_schema()
+        {
+            return "{\n  \"type\": \"string\"\n}";
+        }
     };
     
     class JSONNull
@@ -459,6 +470,11 @@ namespace TypeSafeJSON
         {
             InputSource<InputType> source(input);
             return JSONNull::parse_impl(source);
+        }
+        
+        static std::string get_schema()
+        {
+            return "";
         }
     };
     
@@ -538,6 +554,11 @@ namespace TypeSafeJSON
             InputSource<InputType> source(input);
             return JSONBool::parse_impl(source);
         }
+        
+        static std::string get_schema()
+        {
+            return "{\n  \"type\": \"boolean\"\n}";
+        }
     };
     
     template <typename T>
@@ -615,6 +636,11 @@ namespace TypeSafeJSON
             InputSource<InputType> source(input);
             return JSONHomogenousArray<T>::parse_impl(source);
         }
+        
+        static std::string get_schema()
+        {
+            return "{\"type\": \"array\", \"items\":" + T::get_schema() + "\n}";
+        }
     };
     
     template <typename... Args> 
@@ -687,6 +713,16 @@ namespace TypeSafeJSON
         {
             InputSource<InputType> source(input);
             return JSONSet<>::parse_impl(source);
+        }
+        
+        static std::string get_properties(bool is_first = true)
+        {
+            return "";
+        }
+        
+        static std::string get_schema()
+        {
+            return "{\"type\": \"object\", \"properties\": {} }";
         }
     };
     
@@ -876,6 +912,20 @@ namespace TypeSafeJSON
         {
             InputSource<InputType> source(input);
             return JSONSet<HeadType, Rest...>::parse_impl(source);
+        }
+        
+        static std::string get_properties(bool is_first = true)
+        {
+            std::string result = "";
+            if(!is_first)
+                result += ", ";
+            result += "\"" + HeadType::name + "\": " + HeadType::Type::get_schema() + JSONSet<Rest...>::get_properties(false);
+            return result;
+        }
+        
+        static std::string get_schema()
+        {
+            return "{\"type\": \"object\", \"properties\": " + JSONSet<HeadType, Rest...>::get_properties(true) + "}";
         }
     };
 }
