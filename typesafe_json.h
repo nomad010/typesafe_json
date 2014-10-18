@@ -18,7 +18,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include <limits>
 #include <regex>
 #include "variadic_string.h"
-#include "inherits_from.h"
 #include "format_string.h"
 
 namespace TypeSafeJSON
@@ -431,47 +430,6 @@ namespace TypeSafeJSON
         }
     };
     
-    class JSONNumber : public InheritsFrom<long double>
-    {
-    public:
-        std::vector<std::string> as_json_lines()
-        {
-            return std::vector<std::string>{std::to_string((long double)*this)};
-        }
-        
-        std::string as_json()
-        {
-            std::string result = "";
-            const std::vector<std::string>& lines = as_json_lines();
-            
-            for(int i = 0; i < int(lines.size()); ++i)
-                result += lines[i] + "\n";
-            
-            return result;
-        }
-        
-        template <typename Input>
-        static JSONNumber parse_impl(Input& input)
-        {
-            JSONNumber result;
-            result.value = input.get_number();
-            return result;
-        }
-        
-        template <typename InputType>
-        static JSONNumber parse(InputType& input)
-        {
-            InputSource<InputType> source(input);
-            return JSONNumber::parse_impl(source);
-        }
-        
-        static std::string get_schema()
-        {
-            return "{\n  \"type\": \"number\"\n}";
-        }
-        
-    };
-    
     enum JSONStringFactoryCapabilities
     {
         UnsetStringCapability = 0,
@@ -581,138 +539,6 @@ namespace TypeSafeJSON
             return CheckLengthMinimum<perform_minimum, min_length>::valid(input) && 
                    CheckLengthMaximum<perform_maximum, max_length>::valid(input) &&
                    CheckRegex<perform_regex, RegexString>::valid(input);
-        }
-    };
-    
-    class JSONString : public std::string
-    {
-    public:
-        std::vector<std::string> as_json_lines()
-        {
-            return std::vector<std::string>{escape_string(*this)};
-        }
-        
-        std::string as_json()
-        {
-            std::string result = "";
-            const std::vector<std::string>& lines = as_json_lines();
-            
-            for(int i = 0; i < int(lines.size()); ++i)
-                result += lines[i] + "\n";
-            
-            return result;
-        }
-        
-        template <typename Input>
-        static JSONString parse_impl(Input& input)
-        {
-            int expected_double_quote = input.getc();
-            
-            if(expected_double_quote != '"')
-                throw BadJSONFormatException("Expected opening double quote", input.tell());
-            JSONString result;
-            while(true)
-            {
-                int chr = input.getc();
-                
-                if(iscntrl(chr))
-                    throw BadJSONFormatException("Control character found in string", input.tell());
-                
-                
-                if(chr == '\\')
-                {
-                    int next_chr = input.getc();
-                    
-                    if(next_chr == '"')
-                    {
-                        result.push_back('"');
-                    }
-                    else if(next_chr == '\\')
-                    {
-                        result.push_back('\\');
-                    }
-                    else if(next_chr == '/')
-                    {
-                        result.push_back('/');
-                    }
-                    else if(next_chr == 'b')
-                    {
-                        result.push_back('\b');
-                    }
-                    else if(next_chr == 'f')
-                    {
-                        result.push_back('\f');
-                    }
-                    else if(next_chr == 'n')
-                    {
-                        result.push_back('\n');
-                    }
-                    else if(next_chr == 'r')
-                    {
-                        result.push_back('\r');
-                    }
-                    else if(next_chr == 't')
-                    {
-                        result.push_back('\t');
-                    }
-                    else if(next_chr == 'u')
-                    {
-                        int hex1 = input.getc();
-                        if(!isxdigit(hex1))
-                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code", input.tell());
-                        int hex2 = input.getc();
-                        if(!isxdigit(hex2))
-                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code", input.tell());
-                        int hex3 = input.getc();
-                        if(!isxdigit(hex3))
-                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code", input.tell());
-                        int hex4 = input.getc();
-                        if(!isxdigit(hex4))
-                            throw BadJSONFormatException("Invalid hexadecimal digit in unicode character code", input.tell());
-                        
-                        unsigned int dec1 = hex_to_dec(hex1);
-                        unsigned int dec2 = hex_to_dec(hex2);
-                        unsigned int dec3 = hex_to_dec(hex3);
-                        unsigned int dec4 = hex_to_dec(hex4);
-                        
-                        unsigned int dec = dec4 + 16*(dec3 + 16*(dec2 + 16*dec1));
-                        
-                        if(!is_valid_unicode(dec))
-                            throw BadJSONFormatException("Invalid unicode codepoint in escape code", input.tell());
-                            
-                        const std::string& chrs = codepoint_to_utf8(dec);
-                        result += chrs;
-                    }
-                    else
-                    {
-                        result.push_back('\\');
-                        input.ungetc('\\');
-                    }
-                }
-                else if(chr == '"')
-                {
-                    break;
-                }
-                else
-                {
-                    result.push_back(chr);
-                }
-                
-            }
-            
-            return result;
-        }
-        
-        template <typename InputType>
-        static JSONString parse(InputType& input)
-        {
-            InputSource<FILE*> source(input);
-            return JSONString::parse_impl(source);
-        }
-        
-        static std::string get_schema()
-        {
-            return "{\n  \"type\": \"string\"\n}";
         }
     };
     
@@ -851,60 +677,6 @@ namespace TypeSafeJSON
         }
     };
     
-    class JSONNull
-    {
-    public:
-        std::vector<std::string> as_json_lines()
-        {
-            return std::vector<std::string>{"null"};
-        }
-        
-        std::string as_json()
-        {
-            std::string result = "";
-            const std::vector<std::string>& lines = as_json_lines();
-            
-            for(int i = 0; i < int(lines.size()); ++i)
-                result += lines[i] + "\n";
-            
-            return result;
-        }
-        
-        template <typename Input>
-        static JSONNull parse_impl(Input& input)
-        {
-            int expected_n =  input.getc();
-            if(expected_n != 'n')
-                throw BadJSONFormatException("Unrecognised null", input.tell());
-            
-            int expected_u =  input.getc();
-            if(expected_u != 'u')
-                throw BadJSONFormatException("Unrecognised null", input.tell());
-            
-            int expected_l1 =  input.getc();
-            if(expected_l1 != 'l')
-                throw BadJSONFormatException("Unrecognised null", input.tell());
-            
-            int expected_l2 =  input.getc();
-            if(expected_l2 != 'l')
-                throw BadJSONFormatException("Unrecognised null", input.tell());
-            
-            return JSONNull();
-        }
-        
-        template <typename InputType>
-        static JSONNull parse(InputType& input)
-        {
-            InputSource<InputType> source(input);
-            return JSONNull::parse_impl(source);
-        }
-        
-        static std::string get_schema()
-        {
-            return "";
-        }
-    };
-    
     enum JSONBooleanFactoryCapabilities
     {
         UnsetBooleanCapability = 0
@@ -918,89 +690,6 @@ namespace TypeSafeJSON
         static bool valid(const T& input)
         {
             return true;
-        }
-    };
-    
-    class JSONBool : public InheritsFrom<bool>
-    {
-    public:
-        std::vector<std::string> as_json_lines()
-        {
-            return std::vector<std::string>{bool(*this) ? "true" : "false"};
-        }
-        
-        std::string as_json()
-        {
-            std::string result = "";
-            const std::vector<std::string>& lines = as_json_lines();
-            
-            for(int i = 0; i < int(lines.size()); ++i)
-                result += lines[i] + "\n";
-            
-            return result;
-        }
-        
-        template <typename Input>
-        static JSONBool parse_impl(Input& input)
-        {
-            JSONBool result;
-            
-            int expected_t_or_f = input.getc();
-            
-            if(expected_t_or_f == 't')
-            {
-                int expected_r = input.getc();
-                if(expected_r != 'r')
-                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
-                
-                int expected_u = input.getc();
-                if(expected_u != 'u')
-                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
-                
-                int expected_e = input.getc();
-                if(expected_e != 'e')
-                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
-                
-                result.value = true;
-                return result;
-            }
-            else if(expected_t_or_f == 'f')
-            {
-                int expected_a = input.getc();
-                if(expected_a != 'a')
-                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
-                
-                int expected_l = input.getc();
-                if(expected_l != 'l')
-                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
-                
-                int expected_s = input.getc();
-                if(expected_s != 's')
-                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
-                
-                int expected_e = input.getc();
-                if(expected_e != 'e')
-                    throw BadJSONFormatException("Unrecognised boolean", input.tell());
-                
-                result.value = false;
-                return result;
-            }
-            else
-            {
-                throw BadJSONFormatException("Unrecognised boolean", input.tell());
-            }
-        }
-        
-        template <typename InputType>
-        static JSONBool parse(InputType& input)
-        {
-            InputSource<InputType> source(input);
-            return JSONBool::parse_impl(source);
-        }
-        
-        static std::string get_schema()
-        {
-            return "{\n  \"type\": \"boolean\"\n}";
         }
     };
     
@@ -1164,88 +853,6 @@ namespace TypeSafeJSON
         }
     };
     
-    template <typename T>
-    class JSONHomogenousArray : public std::vector<T>
-    {
-    public:
-        std::vector<std::string> as_json_lines()
-        {
-            if(std::vector<T>::empty()) 
-            {
-                return std::vector<std::string>{"[]"};
-            }
-            else
-            {
-                std::vector<std::string> result{"["};
-                
-                for(int i = 0; i < int(std::vector<T>::size()); ++i)
-                {
-                    const std::vector<std::string>& rep = std::vector<T>::data()[i].as_json_lines();
-                    for(int j = 0; j < int(rep.size()); ++j)
-                        result.push_back("  " + rep[j]);
-                    
-                    if(i != int(std::vector<T>::size()) - 1)
-                        result.back() += ",";
-                }
-                result.push_back("]");
-                return result;
-            }
-        }
-        
-        std::string as_json()
-        {
-            std::string result = "";
-            const std::vector<std::string>& lines = as_json_lines();
-            
-            for(int i = 0; i < int(lines.size()); ++i)
-                result += lines[i] + "\n";
-            
-            return result;
-        }
-        
-//         template <typename Input>
-//         static JSONHomogenousArray<T> parse_impl(Input& input)
-//         {
-//             JSONHomogenousArray<T> result;
-//             
-//             int expected_bracket = input.getc();
-//             
-//             if(expected_bracket != '[')
-//                 throw BadJSONFormatException("Expected opening brace", input.tell());
-//             eat_whitespace(input);
-//             
-//             while(true)
-//             {
-//                 T entry = T::parse_impl(input);
-//                 
-//                 result.push_back(entry);
-//                 
-//                 int is_comma_or_close_bracket = input.getc();
-//                 
-//                 if(is_comma_or_close_bracket == ']')
-//                     break;
-//                 else if(is_comma_or_close_bracket != ',')
-//                     throw BadJSONFormatException("Expected comma or closing bracket", input.tell());
-//                 
-//                 eat_whitespace(input);
-//             }
-//             
-//             return result;
-//         }
-//         
-//         template <typename InputType>
-//         static JSONHomogenousArray<T> parse(InputType& input)
-//         {
-//             InputSource<InputType> source(input);
-//             return JSONHomogenousArray<T>::parse_impl(source);
-//         }
-        
-        static std::string get_schema()
-        {
-            return "{\"type\": \"array\", \"items\":" + T::get_schema() + "\n}";
-        }
-    };
-    
     template <JSONArrayFactoryCapabilities requirements, typename T, 
               long long int min_length = 0, 
               long long int max_length = std::numeric_limits<long long int>::max()>
@@ -1347,12 +954,6 @@ namespace TypeSafeJSON
         {
         }
         
-//         template <typename Input>
-//         static JSONSet<> parse_impl(Input& input)
-//         {
-//             return JSONSet<>();
-//         }
-        
         template <typename Param>
         void get(std::string parameter_name, Param& parameter)
         {
@@ -1394,13 +995,6 @@ namespace TypeSafeJSON
         void get_into(T& val)
         {
         }
-        
-//         template <typename InputType>
-//         static JSONSet<> parse(InputType& input)
-//         {
-//             InputSource<InputType> source(input);
-//             return JSONSet<>::parse_impl(source);
-//         }
         
         static std::string get_properties(bool is_first = true)
         {
@@ -1448,76 +1042,6 @@ namespace TypeSafeJSON
             JSONSet<Rest...>::find_missing_parameters(missing_fields, seen_parameters);
         }
         
-//         template <typename Input>
-//         static JSONSet<HeadType, Rest...> parse_impl(Input& input)
-//         {
-//             JSONSet<HeadType, Rest...> result;
-//             std::unordered_set<std::string> seen_parameters;
-//             
-//             eat_whitespace(input);
-//             char expected_brace = input.getc();
-//             if(expected_brace != '{')
-//                 throw BadJSONFormatException("Expected an opening brace", input.tell());
-//             
-//             bool is_first_run = true;
-//             while(true)
-//             {
-//                 eat_whitespace(input);
-//                 if(!is_first_run)
-//                 {
-//                     char expected_comma_or_brace = input.getc();
-//                     if(expected_comma_or_brace != ',' && expected_comma_or_brace != '}')
-//                         throw BadJSONFormatException("Expected a colon or comma", input.tell());
-//                     else if(expected_comma_or_brace == '}')
-//                         break;
-//                     
-//                 }
-//                 else
-//                 {
-//                     int potential_brace = input.getc();
-//                     if(potential_brace == '}')
-//                         break;
-//                     
-//                     input.ungetc(potential_brace);
-//                 }
-//                 
-//                 
-//                 eat_whitespace(input);
-//                 
-//                 JSONString field_name = JSONString::parse_impl(input);
-//                 
-//                 if(seen_parameters.count(field_name) == 1)
-//                     throw BadJSONFormatException("The following field was duplicated: " + field_name, input.tell());
-//                 seen_parameters.insert(field_name);
-//                 
-//                 eat_whitespace(input);
-//                 char expected_colon = input.getc();
-//                 eat_whitespace(input);
-//                 
-//                 if(expected_colon != ':')
-//                     throw BadJSONFormatException("A colon was expected.", input.tell());
-//                 
-//                 JSONSet<HeadType, Rest...>::parse_against_parameter(result, field_name, input);
-//                 
-//                 is_first_run = false;
-//             }
-//             
-//             if(sizeof...(Rest) + 1 != seen_parameters.size())
-//             {
-//                 std::vector<std::string> missing_fields;
-//                 JSONSet<HeadType, Rest...>::find_missing_parameters(missing_fields, seen_parameters);
-//                 
-//                 std::string fields = "";
-//                 for(int i = 0; i < int(missing_fields.size()) - 1; ++i)
-//                     fields += missing_fields[i] + ", ";
-//                 fields += missing_fields.back();
-//                 
-//                 throw BadJSONFormatException("The following fields were not found in the input: " + fields, input.tell());
-//             }
-//             
-//             return result;
-//         }
-
         template<bool truth, typename T, typename U> 
         class copy_if_true
         {
@@ -1572,33 +1096,6 @@ namespace TypeSafeJSON
             
             rest.as_json_fields(output_lines, false);
         }
-             
-//         std::vector<std::string> as_json_lines()
-//         {
-//             std::vector<std::string> result = std::vector<std::string>(1, "{");
-//             as_json_fields(result);
-//             result.push_back("}");
-//             
-//             return result;
-//         }
-//         
-//         std::string as_json()
-//         {
-//             std::string result = "";
-//             const std::vector<std::string>& lines = as_json_lines();
-//             
-//             for(int i = 0; i < int(lines.size()); ++i)
-//                 result += lines[i] + "\n";
-//             
-//             return result;
-//         }
-        
-//         template <typename InputType>
-//         static JSONSet<HeadType, Rest...> parse(InputType& input)
-//         {
-//             InputSource<InputType> source(input);
-//             return JSONSet<HeadType, Rest...>::parse_impl(source);
-//         }
         
         static std::string get_properties(bool is_first = true)
         {
