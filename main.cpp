@@ -23,31 +23,20 @@ int main(int argc, char** argv)
   "id": "428bf64f-a828-4f06-a6c2-98a23533093c",
   "list": [1.0, 2.0, 3.0]
 })json";
-  
-    std::string test_string = "[1.0, 2.0, 3.0]";
-  
-  
-    
     
     typedef JSONObjectFactory<UnsetObjectCapability, NamedType<JSONStringFactory<UnsetStringCapability>, str_to_list_2("id")>, NamedType<JSONArrayFactory<UnsetArrayCapability, JSONNumberFactory<UnsetNumberCapability>>, str_to_list_4("list")>> JSONType;
     
-    JSONType::ValueType x;
-    vector<long double> json;
+    JSONType::ValueType obj;
     try
     {
-        x = JSONType::parse(json_string);
-//         json = JSONTest::parse(test_string);
+        obj = JSONType::parse(json_string);
     }
     catch(BadJSONFormatException& exception)
     {
         printf("%s at position %d\n", exception.what(), exception.get_position());
     }
-//     fclose(fptr);
-    
-//     printf("Read\n%s\n", json.as_json().c_str());
-    
-//     JSONHomogenousArray<JSONNumber> numbers;
-    json = x.get<str_to_list_4("list")>();
+
+    vector<long double> json = obj.get<str_to_list_4("list")>();
     long double sum = 0;
     
     for(int i = 0; i < int(json.size()); ++i)

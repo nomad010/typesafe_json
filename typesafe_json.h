@@ -995,16 +995,6 @@ namespace TypeSafeJSON
         void get_into(T& val)
         {
         }
-        
-        static std::string get_properties(bool is_first = true)
-        {
-            return "";
-        }
-        
-        static std::string get_schema()
-        {
-            return "{\"type\": \"object\", \"properties\": {} }";
-        }
     };
     
     template <typename HeadType, typename... Rest> 
@@ -1095,20 +1085,6 @@ namespace TypeSafeJSON
                 output_lines.push_back("  " + values[i]);
             
             rest.as_json_fields(output_lines, false);
-        }
-        
-        static std::string get_properties(bool is_first = true)
-        {
-            std::string result = "";
-            if(!is_first)
-                result += ", ";
-            result += "\"" + HeadType::name + "\": " + HeadType::Type::get_schema() + JSONSet<Rest...>::get_properties(false);
-            return result;
-        }
-        
-        static std::string get_schema()
-        {
-            return "{\"type\": \"object\", \"properties\": " + JSONSet<HeadType, Rest...>::get_properties(true) + "}";
         }
     };
     
