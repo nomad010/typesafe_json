@@ -15,9 +15,7 @@ using namespace TypeSafeJSON;
 using namespace std;
 
 int main(int argc, char** argv)
-{
-//     FILE* fptr = fopen("test.json", "r");
-    
+{   
     std::string json_string = R"json(
 {
   "id": "428bf64f-a828-4f06-a6c2-98a23533093c",
@@ -35,6 +33,12 @@ int main(int argc, char** argv)
     {
         printf("%s at position %d\n", exception.what(), exception.get_position());
     }
+    
+    string id = obj.get<str_to_list_2("id")>();
+    id += "derp";
+    obj.set<std::string, str_to_list_2("id")>(id);
+    
+    printf("%s\n", JSONType::as_json(obj).c_str());
 
     vector<long double> json = obj.get<str_to_list_4("list")>();
     long double sum = 0;

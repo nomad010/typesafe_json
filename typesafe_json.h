@@ -27,7 +27,7 @@ namespace TypeSafeJSON
         return !(codepoint < 0x00000000 || codepoint > 0x0010FFFF);
     }
 
-    static std::string escape_string(const std::string& input)
+    static inline std::string escape_string(const std::string& input)
     {
         std::string result = "";
         for(int i = 0; i < int(input.size()); ++i)
@@ -424,7 +424,10 @@ namespace TypeSafeJSON
             const std::vector<std::string>& lines = JSONNumberFactory<requirements, arg1, arg2>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
-                result += lines[i] + "\n";
+                if(i != lines.size() - 1)
+                    result += lines[i] + "\n";
+                else
+                    result += lines[i];
             
             return result;
         }
@@ -955,7 +958,7 @@ namespace TypeSafeJSON
         }
         
         template <typename Param>
-        void get(std::string parameter_name, Param& parameter)
+        void get(std::string parameter_name, Param& parameter) const 
         {
             throw std::logic_error("Parameter not found: " + parameter_name);
         }
@@ -971,28 +974,17 @@ namespace TypeSafeJSON
             typedef JSONNoSuchParameter Type;
         };
         
-        void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true)
+        void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true) const
         {
-        }
-        
-        std::vector<std::string> as_json_lines()
-        {
-            return std::vector<std::string>(1, "{}");
-        }
-        
-        std::string as_json()
-        {
-            std::string result = "";
-            const std::vector<std::string>& lines = as_json_lines();
-            
-            for(int i = 0; i < int(lines.size()); ++i)
-                result += lines[i] + "\n";
-            
-            return result;
         }
         
         template <typename T, char... Chrs>
-        void get_into(T& val)
+        void get_into(T& val) const
+        {
+        }
+        
+        template <typename T, char... Chrs>
+        void set(T& val)
         {
         }
     };
@@ -1041,7 +1033,7 @@ namespace TypeSafeJSON
         class copy_if_true<true, T, U>
         {
         public:
-            static void copy(T& output, U& input)
+            static void copy(T& output, const U& input)
             {
                 output = input;
             }
@@ -1051,32 +1043,41 @@ namespace TypeSafeJSON
         class copy_if_true<false, T, U>
         {
         public:
-            static void copy(T& output, U& input)
+            static void copy(T& output, const U& input)
             {
             }
         };
         
         template <typename T, char... Chrs>
-        void get_into(T& val)
+        void get_into(T& val) const
         {
             copy_if_true<std::is_same<CompileStr<Chrs...>, typename HeadType::NameType>::value, T, typename HeadType::Type::ValueType>::copy(val, item);
             rest.template get_into<T, Chrs...>(val);
         }
         
         template <char... Chrs>
-        typename ParameterType<Chrs...>::Type::ValueType get()
+        typename ParameterType<Chrs...>::Type::ValueType get() const
         {
             typename ParameterType<Chrs...>::Type::ValueType val;
             get_into<typename ParameterType<Chrs...>::Type::ValueType, Chrs...>(val);
             return val;
         }
         
-        void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true)
+        template <typename T, char... Chrs>
+        void set(T& val)
+        {
+            copy_if_true<std::is_same<CompileStr<Chrs...>, typename HeadType::NameType>::value, 
+                         typename HeadType::Type::ValueType, 
+                         T>::copy(item, val);
+            rest.template set<T, Chrs...>(val);
+        }
+        
+        void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true) const
         {
             if(!is_first)
                 output_lines.back() += ",";
             
-            std::vector<std::string> values = item.as_json_lines();
+            std::vector<std::string> values = HeadType::Type::as_json_lines(item);
             std::string field_name = "  \"" + escape_string(HeadType::name) + "\": ";
             std::string first_line = field_name + values[0];
             output_lines.push_back(first_line);
@@ -1221,7 +1222,7 @@ namespace TypeSafeJSON
             return result;
         }
         
-        std::string as_json(const ValueType& value)
+        static std::string as_json(const ValueType& value)
         {
             std::string result = "";
             const std::vector<std::string>& lines = JSONObjectFactory<requirements, ObjectEntries...>::as_json_lines(value);
