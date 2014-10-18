@@ -24,25 +24,22 @@ int main(int argc, char** argv)
   "list": [1.0, 2.0, 3.0]
 })json";
     
-    typedef JSONSet<NamedType<JSONString, str_to_list_2("id")>, NamedType<JSONHomogenousArray<JSONNumber>, str_to_list_4("list")>> JSONType;
-    JSONType json;
+    typedef JSONObjectFactory<UnsetObjectCapability, NamedType<JSONStringFactory<UnsetStringCapability>, str_to_list_2("id")>, NamedType<JSONArrayFactory<UnsetArrayCapability, JSONNumberFactory<UnsetNumberCapability>>, str_to_list_4("list")>> JSONType;
+    
+    JSONType::ValueType obj;
     try
     {
-        json = JSONType::parse(json_string);
+        obj = JSONType::parse(json_string);
     }
     catch(BadJSONFormatException& exception)
     {
         printf("%s at position %d\n", exception.what(), exception.get_position());
     }
-//     fclose(fptr);
-    
-    printf("Read\n%s\n", json.as_json().c_str());
-    
-    JSONHomogenousArray<JSONNumber> numbers;
-    numbers = json.get<str_to_list_4("list")>();
+
+    vector<long double> json = obj.get<str_to_list_4("list")>();
     long double sum = 0;
     
-    for(int i = 0; i < int(numbers.size()); ++i)
-        sum += numbers[i];
+    for(int i = 0; i < int(json.size()); ++i)
+        sum += json[i];
     printf("%Lf\n", sum);
 }
