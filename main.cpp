@@ -22,7 +22,9 @@ int main(int argc, char** argv)
   "list": [1.0, 2.0, 3.0]
 })json";
     
-    typedef JSONObjectFactory<UnsetObjectCapability, NamedType<JSONStringFactory<UnsetStringCapability>, str_to_list_2("id")>, NamedType<JSONArrayFactory<UnsetArrayCapability, JSONNumberFactory<UnsetNumberCapability>>, str_to_list_4("list")>> JSONType;
+    typedef JSONObjectFactory<true, 
+                              NamedType<JSONStringFactory<>, str_to_list_2("id")>, 
+                              NamedType<JSONArrayFactory<JSONNumberFactory<>>, str_to_list_4("list")>> JSONType;
     
     JSONType::ValueType obj;
     try

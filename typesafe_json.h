@@ -298,109 +298,27 @@ namespace TypeSafeJSON
         }
     };
     
-    enum JSONNumberFactoryCapabilities
-    {
-        UnsetNumberCapability = 0,
-        MinimumNumberCapability = 1,
-        ExclusiveMinimumNumberCapability = 2,
-        MaximumNumberCapability = 4,
-        ExclusiveMaximumNumberCapability = 8
-    };
-    
-    template <bool check_lower = false, bool exclusive_bound = false, long long int lower_bound = 0>
-    class CheckLower;
-    
-    template <bool exclusive_bound, long long int lower_bound>
-    class CheckLower<true, exclusive_bound, lower_bound>
+    template <typename Type>
+    class DefaultNumberValidator
     {
     public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return input > lower_bound || (input == lower_bound && !exclusive_bound);
-        }
-    };
-    
-    template <bool exclusive_bound, long long int lower_bound>
-    class CheckLower<false, exclusive_bound, lower_bound>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
+        static bool check(const Type& value)
         {
             return true;
         }
     };
     
-    template <bool check_upper = false, bool exclusive_bound = false, long long int lower_bound = 0>
-    class CheckUpper;
-    
-    template <bool exclusive_bound, long long int lower_bound>
-    class CheckUpper<true, exclusive_bound, lower_bound>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return input < lower_bound || (input == lower_bound && !exclusive_bound);
-        }
-    };
-    
-    template <bool exclusive_bound, long long int lower_bound>
-    class CheckUpper<false, exclusive_bound, lower_bound>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return true;
-        }
-    };
-    
-    template <JSONNumberFactoryCapabilities requirements,
-              long long int arg1 = -1,
-              long long int arg2 = -1>
-    class CheckNumberRequirements
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            constexpr bool perform_minimum = requirements & MinimumNumberCapability;
-            constexpr bool minimum_exclusive = requirements & ExclusiveMinimumNumberCapability;
-            constexpr bool perform_maximum = requirements & MaximumNumberCapability;
-            constexpr bool maximum_exclusive = requirements & ExclusiveMaximumNumberCapability;
-            
-            if(perform_minimum)
-            {
-                if(perform_maximum)
-                    return CheckLower<true, minimum_exclusive, arg1>::valid(input) && CheckUpper<true, maximum_exclusive, arg2>::valid(input);
-                else
-                    return CheckLower<true, minimum_exclusive, arg1>::valid(input);
-            }
-            else
-            {
-                if(perform_maximum)
-                    return CheckUpper<true, maximum_exclusive, arg1>::valid(input);
-                else
-                    return true;
-            }
-        }
-    };
-    
-    template <JSONNumberFactoryCapabilities requirements,
-              long long int arg1 = 0,
-              long long int arg2 = 0>
+    template <typename Type = long double, typename Validation = DefaultNumberValidator<Type> >
     class JSONNumberFactory
     {
     public:
-        typedef long double ValueType;
-        
+        typedef Type ValueType;
+
         template <typename Input>
         static ValueType parse_impl(Input& input)
         {
             const ValueType value = input.template get_value<ValueType>();
-            if(!CheckNumberRequirements<requirements, arg1, arg2>::valid(value))
+            if(!Validation::check(value))
                 throw JSONValidationException();
             
             return value;
@@ -410,7 +328,7 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONNumberFactory<requirements, arg1, arg2>::parse_impl(source);
+            return JSONNumberFactory<Type, Validation>::parse_impl(source);
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -421,7 +339,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONNumberFactory<requirements, arg1, arg2>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONNumberFactory<Type, Validation>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 if(i != lines.size() - 1)
@@ -433,126 +351,21 @@ namespace TypeSafeJSON
         }
     };
     
-    enum JSONStringFactoryCapabilities
-    {
-        UnsetStringCapability = 0,
-        MinimumLengthStringCapabilty = 1,
-        MaximumLengthStringCapabilty = 2,
-        RegexStringCapabilty = 4
-    };
-    
-    
-    template <bool has_minimum, long long int minimum>
-    class CheckLengthMinimum
-    {
-    };
-    
-    template <long long int minimum>
-    class CheckLengthMinimum<true, minimum>
+    template <typename Type>
+    class DefaultStringValidator
     {
     public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return input.length() >= minimum;
-        }
-    };
-    
-    template <long long int minimum>
-    class CheckLengthMinimum<false, minimum>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
+        static bool check(const Type& value)
         {
             return true;
         }
     };
     
-    template <bool has_maximum, long long int maximum>
-    class CheckLengthMaximum
-    {
-    };
-    
-    template <long long int maximum>
-    class CheckLengthMaximum<true, maximum>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return input.length() <= maximum;
-        }
-    };
-    
-    template <long long int maximum>
-    class CheckLengthMaximum<false, maximum>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return true;
-        }
-    };
-    
-    template <bool has_regex, typename Regex>
-    class CheckRegex
-    {
-    };
-    
-    template <typename Regex>
-    class CheckRegex<true, Regex>
-    {
-    public:
-        const static constexpr std::regex match_regex(typename Regex::name);
-        
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return match_regex.regex_match(input.begin(), input.end());
-        }
-    };
-    
-    template <typename Regex>
-    class CheckRegex<false, Regex>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return true;
-        }
-    };
-    
-    template <JSONStringFactoryCapabilities requirements,
-              long long int min_length = 0,
-              long long int max_length = std::numeric_limits<long long int>::max(),
-              typename RegexString = CompileStr<>>
-    class CheckStringRequirements
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            constexpr bool perform_minimum = requirements & MinimumLengthStringCapabilty;
-            constexpr bool perform_maximum = requirements & MaximumLengthStringCapabilty;
-            constexpr bool perform_regex = requirements & RegexStringCapabilty;
-            
-            return CheckLengthMinimum<perform_minimum, min_length>::valid(input) && 
-                   CheckLengthMaximum<perform_maximum, max_length>::valid(input) &&
-                   CheckRegex<perform_regex, RegexString>::valid(input);
-        }
-    };
-    
-    template <JSONStringFactoryCapabilities requirements,
-              long long int min_length = 0,
-              long long int max_length = std::numeric_limits<long long int>::max(),
-              typename RegexString = CompileStr<>>
+    template <typename Type = std::string, typename Validation = DefaultStringValidator<Type>>
     class JSONStringFactory
     {
     public:
-        typedef std::string ValueType;
+        typedef Type ValueType;
         
         template <typename Input>
         static ValueType parse_impl(Input& input)
@@ -651,7 +464,7 @@ namespace TypeSafeJSON
                 }
             }
             
-            if(!CheckStringRequirements<requirements, min_length, max_length, RegexString>::valid(value))
+            if(!Validation::check(value))
                 throw JSONValidationException();
             return value;
         }
@@ -660,7 +473,7 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONStringFactory<requirements, min_length, max_length, RegexString>::parse_impl(source);
+            return JSONStringFactory<Type, Validation>::parse_impl(source);
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -671,7 +484,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONStringFactory<requirements, min_length, max_length, RegexString>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONStringFactory<Type, Validation>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 result += lines[i] + "\n";
@@ -680,27 +493,21 @@ namespace TypeSafeJSON
         }
     };
     
-    enum JSONBooleanFactoryCapabilities
-    {
-        UnsetBooleanCapability = 0
-    };
-    
-    template <JSONBooleanFactoryCapabilities requirements>
-    class CheckBooleanRequirements
+    template <typename Type>
+    class DefaultBooleanValidator
     {
     public:
-        template <typename T>
-        static bool valid(const T& input)
+        static bool check(const Type& value)
         {
             return true;
         }
     };
     
-    template <JSONBooleanFactoryCapabilities requirements>
+    template <typename Type = bool, typename Validator = DefaultBooleanValidator<Type>>
     class JSONBooleanFactory
     {
     public:
-        typedef bool ValueType;
+        typedef Type ValueType;
         
         template <typename Input>
         static ValueType parse_impl(Input& input)
@@ -750,7 +557,7 @@ namespace TypeSafeJSON
                 throw BadJSONFormatException("Unrecognised boolean", input.tell());
             }
             
-            if(!CheckBooleanRequirements<requirements>::valid(value))
+            if(!Validator::check(value))
                 throw JSONValidationException();
             
             return value;
@@ -760,7 +567,7 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONBooleanFactory<requirements>::parse_impl(source);
+            return JSONBooleanFactory<Type, Validator>::parse_impl(source);
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -771,7 +578,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONBooleanFactory<requirements>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONBooleanFactory<Type, Validator>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 result += lines[i] + "\n";
@@ -780,89 +587,21 @@ namespace TypeSafeJSON
         }
     };
     
-    enum JSONArrayFactoryCapabilities
-    {
-        UnsetArrayCapability = 0,
-        MinimumLengthArrayCapability = 1,
-        MaximumLengthArrayCapability = 2
-    };
-    
-    template <bool perform, long long int minimum>
-    class CheckArrayLengthMinimum
-    {
-    };
-    
-    template <long long int minimum>
-    class CheckArrayLengthMinimum<true, minimum>
+    template <typename Type>
+    class DefaultArrayValidator
     {
     public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return input.size() >= minimum;
-        }
-    };
-    
-    template <long long int minimum>
-    class CheckArrayLengthMinimum<false, minimum>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
+        static bool check(const Type& value)
         {
             return true;
         }
     };
     
-    template <bool perform, long long int maximum>
-    class CheckArrayLengthMaximum
-    {
-    };
-    
-    template <long long int maximum>
-    class CheckArrayLengthMaximum<true, maximum>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return input.size() <= maximum;
-        }
-    };
-    
-    template <long long int maximum>
-    class CheckArrayLengthMaximum<false, maximum>
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            return true;
-        }
-    };
-    
-    template <JSONArrayFactoryCapabilities requirements, long long int minimum, long long int maximum>
-    class CheckArrayRequirements
-    {
-    public:
-        template <typename T>
-        static bool valid(const T& input)
-        {
-            constexpr bool perform_minimum = requirements & MinimumLengthArrayCapability;
-            constexpr bool perform_maximum = requirements & MaximumLengthArrayCapability;
-            
-            return CheckArrayLengthMinimum<perform_minimum, minimum>::valid(input) &&
-                   CheckArrayLengthMaximum<perform_maximum, maximum>::valid(input);
-        }
-    };
-    
-    template <JSONArrayFactoryCapabilities requirements, typename T, 
-              long long int min_length = 0, 
-              long long int max_length = std::numeric_limits<long long int>::max()>
+    template <typename T, typename Container = std::vector<typename T::ValueType>, typename Validator = DefaultArrayValidator<Container>>
     class JSONArrayFactory
     {
     public:
-        typedef std::vector<typename T::ValueType> ValueType;
+        typedef Container ValueType;
         
         template <typename Input>
         static ValueType parse_impl(Input& input)
@@ -891,7 +630,7 @@ namespace TypeSafeJSON
                 eat_whitespace(input);
             }
             
-            if(!CheckArrayRequirements<requirements, min_length, max_length>::valid(value))
+            if(!Validator::check(value))
                 throw JSONValidationException();
             
             return value;
@@ -901,7 +640,7 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONArrayFactory<requirements, T, min_length, max_length>::parse_impl(source);
+            return JSONArrayFactory<T, Container, Validator>::parse_impl(source);
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -931,7 +670,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONArrayFactory<requirements, T, min_length, max_length>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONArrayFactory<T, Container, Validator>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 result += lines[i] + "\n";
@@ -1143,7 +882,17 @@ namespace TypeSafeJSON
         }
     };
     
-    template <JSONObjectFactoryCapabilities requirements, typename... ObjectEntries>
+    template <typename Type>
+    class DefaultObjectValidator
+    {
+    public:
+        static bool check(const Type& value)
+        {
+            return true;
+        }
+    };
+    
+    template <bool check_parameters, typename... ObjectEntries>
     class JSONObjectFactory
     {
     public:
@@ -1153,8 +902,7 @@ namespace TypeSafeJSON
         static ValueType parse_impl(Input& input)
         {
             JSONSet<ObjectEntries...> value;
-            constexpr bool check_validity = requirements & DoNotAssumeValidObjectCapability;
-            ObjectParameterTracker<check_validity> parameter_tracker;
+            ObjectParameterTracker<check_parameters> parameter_tracker;
             
             eat_whitespace(input);
             char expected_brace = input.getc();
@@ -1186,7 +934,7 @@ namespace TypeSafeJSON
                 
                 eat_whitespace(input);
                 
-                std::string field_name = JSONStringFactory<UnsetStringCapability>::parse_impl(input);
+                std::string field_name = JSONStringFactory<std::string>::parse_impl(input);
                 parameter_tracker.add_parameter(field_name, input);
                 
                 eat_whitespace(input);
@@ -1210,7 +958,7 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONObjectFactory<requirements, ObjectEntries...>::parse_impl(source);
+            return JSONObjectFactory<check_parameters, ObjectEntries...>::parse_impl(source);
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -1225,7 +973,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONObjectFactory<requirements, ObjectEntries...>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONObjectFactory<check_parameters, ObjectEntries...>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 result += lines[i] + "\n";
