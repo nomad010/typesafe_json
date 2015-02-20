@@ -20,8 +20,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include "variadic_string.h"
 #include "format_string.h"
 
+/** The actual voodoo is here. **/ 
+
 namespace TypeSafeJSON
 {
+    /** Utility functions **/
     static inline bool is_valid_unicode(int codepoint)
     {
         return !(codepoint < 0x00000000 || codepoint > 0x0010FFFF);
@@ -146,6 +149,8 @@ namespace TypeSafeJSON
         }
     }
     
+    /** Some exceptions. **/
+    
     class BadJSONFormatException : public std::exception
     {
     private:
@@ -196,6 +201,7 @@ namespace TypeSafeJSON
         }
     };
     
+    /** A way to abstract out input sources. **/
     template <typename T>
     class InputSource
     {
@@ -220,15 +226,6 @@ namespace TypeSafeJSON
         void ungetc(int chr)
         {
             ::ungetc(chr, fptr);
-        }
-        
-        long double get_number()
-        {
-            long double x = 0;
-            int scan_result = fscanf(fptr, "%Lf", &x);
-            if(scan_result != 1)
-                throw BadJSONFormatException("Failed to parse number", tell());
-            return x;
         }
         
         template <typename T>
@@ -269,17 +266,6 @@ namespace TypeSafeJSON
             --pos;
         }
         
-        long double get_number()
-        {
-            long double x = 0;
-            int length = 0;
-            int scan_result = sscanf(input.c_str() + pos, "%Lf%n", &x, &length);
-            pos += length;
-            if(scan_result != 1)
-                throw BadJSONFormatException("Failed to parse number", tell());
-            return x;
-        }
-        
         template <typename T>
         T get_value()
         {
@@ -298,6 +284,9 @@ namespace TypeSafeJSON
         }
     };
     
+    /** Number Implementation **/
+    
+    /// Number Validator
     template <typename Type>
     class DefaultNumberValidator
     {
@@ -308,7 +297,8 @@ namespace TypeSafeJSON
         }
     };
     
-    template <typename Type = long double, typename Validation = DefaultNumberValidator<Type> >
+    /// Number Factory to parse JSON Numbers represented as Type. Type will default to long double. This should always work even if Type is integral.
+    template <typename Type = long double, template <typename> class Validation = DefaultNumberValidator>
     class JSONNumberFactory
     {
     public:
@@ -318,7 +308,7 @@ namespace TypeSafeJSON
         static ValueType parse_impl(Input& input)
         {
             const ValueType value = input.template get_value<ValueType>();
-            if(!Validation::check(value))
+            if(!Validation<Type>::check(value))
                 throw JSONValidationException();
             
             return value;
@@ -351,6 +341,9 @@ namespace TypeSafeJSON
         }
     };
     
+    /** String Implementation **/
+    
+    /// String validator
     template <typename Type>
     class DefaultStringValidator
     {
@@ -361,7 +354,8 @@ namespace TypeSafeJSON
         }
     };
     
-    template <typename Type = std::string, typename Validation = DefaultStringValidator<Type>>
+    /// String Factory to parse JSON Strings represented as Type. Type will default to std::string
+    template <typename Type = std::string, template <typename> class Validation = DefaultStringValidator>
     class JSONStringFactory
     {
     public:
@@ -464,7 +458,7 @@ namespace TypeSafeJSON
                 }
             }
             
-            if(!Validation::check(value))
+            if(!Validation<Type>::check(value))
                 throw JSONValidationException();
             return value;
         }
@@ -493,6 +487,9 @@ namespace TypeSafeJSON
         }
     };
     
+    /** Boolean Implementation **/
+    
+    /// Boolean Validator
     template <typename Type>
     class DefaultBooleanValidator
     {
@@ -503,7 +500,8 @@ namespace TypeSafeJSON
         }
     };
     
-    template <typename Type = bool, typename Validator = DefaultBooleanValidator<Type>>
+    /// A factory of JSONBooleans represented as Type. Type defaults to bool
+    template <typename Type = bool, template <typename> class Validator = DefaultBooleanValidator>
     class JSONBooleanFactory
     {
     public:
@@ -557,7 +555,7 @@ namespace TypeSafeJSON
                 throw BadJSONFormatException("Unrecognised boolean", input.tell());
             }
             
-            if(!Validator::check(value))
+            if(!Validator<Type>::check(value))
                 throw JSONValidationException();
             
             return value;
@@ -587,6 +585,9 @@ namespace TypeSafeJSON
         }
     };
     
+    /** Array Implementation **/
+    
+    /// Array Validator
     template <typename Type>
     class DefaultArrayValidator
     {
@@ -597,7 +598,8 @@ namespace TypeSafeJSON
         }
     };
     
-    template <typename T, typename Container = std::vector<typename T::ValueType>, typename Validator = DefaultArrayValidator<Container>>
+    /// Creates a homogenous JSONArray of values of type T represented by Container which will default to std::vector of Ts.
+    template <typename T, typename Container = std::vector<typename T::ValueType>, template <typename> class Validator = DefaultArrayValidator>
     class JSONArrayFactory
     {
     public:
@@ -630,7 +632,7 @@ namespace TypeSafeJSON
                 eat_whitespace(input);
             }
             
-            if(!Validator::check(value))
+            if(!Validator<Container>::check(value))
                 throw JSONValidationException();
             
             return value;
@@ -679,6 +681,43 @@ namespace TypeSafeJSON
         }
     };
     
+    /** Object Implementation - this part's the killer. **/
+    
+    /// Tracks parameters for finding duplicates and missing fields.
+    /// This is a separate class for future expansion, it was a class in the past, it worked, so I left.
+    class ObjectParameterTracker
+    {
+    public:
+        std::unordered_set<std::string> parameters;
+        
+        template <typename Input>
+        void add_parameter(const std::string& parameter, Input& input)
+        {
+            bool insert_happened = parameters.insert(parameter).second;
+            
+            if(!insert_happened)
+                throw BadJSONFormatException("The following field was duplicated: " + parameter, input.tell()); 
+        }
+        
+        template <typename T, typename Input>
+        void finish(T& object, Input& input)
+        {
+            std::vector<std::string> missing_fields;
+            T::find_missing_parameters(missing_fields, parameters);
+            
+            if(missing_fields.empty())
+                return;
+            
+            std::string fields = "";
+            for(int i = 0; i < int(missing_fields.size()) - 1; ++i)
+                fields += missing_fields[i] + ", ";
+            fields += missing_fields.back();
+            
+            throw BadJSONFormatException("The following fields were not found in the input: " + fields, input.tell());
+        }
+    };
+    
+    /// JSONSet implementation, compile-time name to field mapping. Uses NamedType as its template arguments.
     template <typename... Args> 
     class JSONSet;
     
@@ -752,7 +791,7 @@ namespace TypeSafeJSON
             if(parameter_name == HeadType::name)
                 result.item = HeadType::Type::parse_impl(input);
             else
-                JSONSet<Rest...>::parse_against_parameter(result.rest, parameter_name, input);
+                return JSONSet<Rest...>::parse_against_parameter(result.rest, parameter_name, input);
         }
         
         static void find_missing_parameters(std::vector<std::string>& missing_fields, std::unordered_set<std::string> seen_parameters)
@@ -828,60 +867,7 @@ namespace TypeSafeJSON
         }
     };
     
-    enum JSONObjectFactoryCapabilities
-    {
-        UnsetObjectCapability = 0,
-        DoNotAssumeValidObjectCapability = 1
-    };
-    
-    template <bool track_parameter_names>
-    class ObjectParameterTracker
-    {
-    public:
-        template <typename Input>
-        void add_parameter(const std::string& parameter, Input& input)
-        {
-        }
-        
-        template <typename T, typename Input>
-        void finish(T& object, Input& input)
-        {
-        }
-    };
-    
-    template <>
-    class ObjectParameterTracker<true>
-    {
-    public:
-        std::unordered_set<std::string> parameters;
-        
-        template <typename Input>
-        void add_parameter(const std::string& parameter, Input& input)
-        {
-            bool insert_happened = parameters.insert(parameter).second;
-            
-            if(!insert_happened)
-                throw BadJSONFormatException("The following field was duplicated: " + parameter, input.tell()); 
-        }
-        
-        template <typename T, typename Input>
-        void finish(T& object, Input& input)
-        {
-            std::vector<std::string> missing_fields;
-            T::find_missing_parameters(missing_fields, parameters);
-            
-            if(missing_fields.empty())
-                return;
-            
-            std::string fields = "";
-            for(int i = 0; i < int(missing_fields.size()) - 1; ++i)
-                fields += missing_fields[i] + ", ";
-            fields += missing_fields.back();
-            
-            throw BadJSONFormatException("The following fields were not found in the input: " + fields, input.tell());
-        }
-    };
-    
+    /// A validator for the returned JSOMSet type.
     template <typename Type>
     class DefaultObjectValidator
     {
@@ -892,7 +878,8 @@ namespace TypeSafeJSON
         }
     };
     
-    template <bool check_parameters, typename... ObjectEntries>
+    /// A factory to parse these JSONSet types
+    template <template <typename> class Validator, typename... ObjectEntries>
     class JSONObjectFactory
     {
     public:
@@ -902,7 +889,7 @@ namespace TypeSafeJSON
         static ValueType parse_impl(Input& input)
         {
             JSONSet<ObjectEntries...> value;
-            ObjectParameterTracker<check_parameters> parameter_tracker;
+            ObjectParameterTracker parameter_tracker;
             
             eat_whitespace(input);
             char expected_brace = input.getc();
@@ -931,7 +918,6 @@ namespace TypeSafeJSON
                     input.ungetc(potential_brace);
                 }
                 
-                
                 eat_whitespace(input);
                 
                 std::string field_name = JSONStringFactory<std::string>::parse_impl(input);
@@ -948,8 +934,10 @@ namespace TypeSafeJSON
                 
                 is_first_run = false;
             }
-            
             parameter_tracker.finish(value, input);
+            
+            if(!Validator<JSONSet<ObjectEntries...>>::check(value))
+                throw JSONValidationException();
             
             return value;
         }
@@ -958,7 +946,7 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONObjectFactory<check_parameters, ObjectEntries...>::parse_impl(source);
+            return JSONObjectFactory<Validator, ObjectEntries...>::parse_impl(source);
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -973,7 +961,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONObjectFactory<check_parameters, ObjectEntries...>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONObjectFactory<Validator, ObjectEntries...>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 result += lines[i] + "\n";
@@ -981,5 +969,4 @@ namespace TypeSafeJSON
             return result;
         }
     };
-    
 }

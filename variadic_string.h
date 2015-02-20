@@ -10,6 +10,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 #pragma once
 
+/** Utility macros and classes to make working with strings in templates bearable. **/
+
 #define str_to_list_1(s) s[0]
 #define str_to_list_2(s) str_to_list_1(s), s[1]
 #define str_to_list_3(s) str_to_list_2(s), s[2]

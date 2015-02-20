@@ -8,23 +8,23 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **/
 #include <cstdio>
-
 #include "typesafe_json.h"
 
+/** Example app. **/ 
+
 using namespace TypeSafeJSON;
-using namespace std;
 
 int main(int argc, char** argv)
 {   
     std::string json_string = R"json(
 {
   "id": "428bf64f-a828-4f06-a6c2-98a23533093c",
-  "list": [1.0, 2.0, 3.0]
+  "list": [1, 2, 3]
 })json";
     
-    typedef JSONObjectFactory<true, 
+    typedef JSONObjectFactory<DefaultObjectValidator,
                               NamedType<JSONStringFactory<>, str_to_list_2("id")>, 
-                              NamedType<JSONArrayFactory<JSONNumberFactory<>>, str_to_list_4("list")>> JSONType;
+                              NamedType<JSONArrayFactory<JSONNumberFactory<long double>>, str_to_list_4("list")>> JSONType;
     
     JSONType::ValueType obj;
     try
@@ -36,16 +36,16 @@ int main(int argc, char** argv)
         printf("%s at position %d\n", exception.what(), exception.get_position());
     }
     
-    string id = obj.get<str_to_list_2("id")>();
+    std::string id = obj.get<str_to_list_2("id")>();
     id += "derp";
     obj.set<std::string, str_to_list_2("id")>(id);
     
     printf("%s\n", JSONType::as_json(obj).c_str());
 
-    vector<long double> json = obj.get<str_to_list_4("list")>();
+    std::vector<long double> json = obj.get<str_to_list_4("list")>();
     long double sum = 0;
     
     for(int i = 0; i < int(json.size()); ++i)
         sum += json[i];
-    printf("%Lf\n", sum);
+    printf("%Lf\n", sum); 
 }
