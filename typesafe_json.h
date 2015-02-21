@@ -847,7 +847,6 @@ namespace TypeSafeJSON
         typename HeadType::Type::ValueType item;
         JSONSet<Rest...> rest;
         
-        
         template <char... chrs>
         class ParameterType
         {
@@ -967,16 +966,16 @@ namespace TypeSafeJSON
     };
     
     /// A factory to parse these JSONSet types
-    template <template <typename> class Validator, typename... ObjectEntries>
+    template <typename T, template <typename> class Validator = DefaultObjectValidator>
     class JSONObjectFactory
     {
     public:
-        typedef JSONSet<ObjectEntries...> ValueType;
+        typedef T ValueType;
         
         template <typename Input>
         static ValueType parse_impl(Input& input)
         {
-            JSONSet<ObjectEntries...> value;
+            T value;
             ObjectParameterTracker parameter_tracker;
             
             eat_whitespace(input);
@@ -1018,13 +1017,13 @@ namespace TypeSafeJSON
                 if(expected_colon != ':')
                     throw BadJSONFormatException("A colon was expected.", input.tell());
                 
-                JSONSet<ObjectEntries...>::parse_against_parameter(value, field_name, input);
+                T::parse_against_parameter(value, field_name, input);
                 
                 is_first_run = false;
             }
             parameter_tracker.finish(value, input);
             
-            if(!Validator<JSONSet<ObjectEntries...>>::check(value))
+            if(!Validator<T>::check(value))
                 throw JSONValidationException();
             
             return value;
@@ -1034,7 +1033,7 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONObjectFactory<Validator, ObjectEntries...>::parse_impl(source);
+            return JSONObjectFactory<T, Validator>::parse_impl(source);
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -1049,7 +1048,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONObjectFactory<Validator, ObjectEntries...>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONObjectFactory<T, Validator>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 result += lines[i] + "\n";

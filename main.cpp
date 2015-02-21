@@ -22,9 +22,9 @@ int main(int argc, char** argv)
   "list": [1, 2, 3]
 })json";
     
-    typedef JSONObjectFactory<SillyObjectValidator,
-                              NamedType<JSONStringFactory<>, str_to_list_2("id")>, 
-                              NamedType<JSONArrayFactory<JSONNumberFactory<long double>, UniqueArrayValidator>, str_to_list_4("list")>> JSONType;
+    typedef JSONObjectFactory<JSONSet<NamedType<JSONStringFactory<>, str_to_list_2("id")>, 
+                                      NamedType<JSONArrayFactory<JSONNumberFactory<long double>, UniqueArrayValidator>, str_to_list_4("list")>>,
+                                      SillyObjectValidator> JSONType;
     
     JSONType::ValueType obj;
     try
