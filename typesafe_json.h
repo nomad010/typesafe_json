@@ -286,7 +286,7 @@ namespace TypeSafeJSON
     
     /** Number Implementation **/
     
-    /// Number Validator
+    /// Number Validators
     template <typename Type>
     class DefaultNumberValidator
     {
@@ -294,6 +294,51 @@ namespace TypeSafeJSON
         static bool check(const Type& value)
         {
             return true;
+        }
+    };
+    
+    template <typename Type>
+    class PositiveNumberValidator
+    {
+        static bool check(const Type& value)
+        {
+            return value > 0;
+        }
+    };
+    
+    template <typename Type>
+    class NonNegativeNumberValidator
+    {
+        static bool check(const Type& value)
+        {
+            return value >= 0;
+        }
+    };
+    
+    template <typename Type>
+    class ZeroNumberValidator
+    {
+        static bool check(const Type& value)
+        {
+            return value == 0;
+        }
+    };
+    
+    template <typename Type>
+    class NonPositiveNumberValidator
+    {
+        static bool check(const Type& value)
+        {
+            return value <= 0;
+        }
+    };
+    
+    template <typename Type>
+    class NegativeNumberValidator
+    {
+        static bool check(const Type& value)
+        {
+            return value < 0;
         }
     };
     
@@ -343,7 +388,7 @@ namespace TypeSafeJSON
     
     /** String Implementation **/
     
-    /// String validator
+    /// String validators
     template <typename Type>
     class DefaultStringValidator
     {
@@ -351,6 +396,16 @@ namespace TypeSafeJSON
         static bool check(const Type& value)
         {
             return true;
+        }
+    };
+    
+    template <typename Type>
+    class NonEmptyStringValidator
+    {
+    public:
+        static bool check(const Type& value)
+        {
+            return !value.empty();
         }
     };
     
@@ -489,7 +544,7 @@ namespace TypeSafeJSON
     
     /** Boolean Implementation **/
     
-    /// Boolean Validator
+    /// Boolean Validators
     template <typename Type>
     class DefaultBooleanValidator
     {
@@ -587,7 +642,7 @@ namespace TypeSafeJSON
     
     /** Array Implementation **/
     
-    /// Array Validator
+    /// Array Validators
     template <typename Type>
     class DefaultArrayValidator
     {
@@ -598,8 +653,25 @@ namespace TypeSafeJSON
         }
     };
     
+    template <typename Type>
+    class UniqueArrayValidator
+    {
+    public:
+        static bool check(const Type& value)
+        {
+            std::unordered_set<typename Type::value_type> seen_items;
+            for(auto it = value.begin(); it != value.end(); ++it)
+            {
+                bool insert_happened = seen_items.insert(*it).second;
+                if(!insert_happened)
+                    return false;
+            }
+            return true;
+        }
+    };
+    
     /// Creates a homogenous JSONArray of values of type T represented by Container which will default to std::vector of Ts.
-    template <typename T, typename Container = std::vector<typename T::ValueType>, template <typename> class Validator = DefaultArrayValidator>
+    template <typename T, template <typename> class Validator = DefaultArrayValidator, typename Container = std::vector<typename T::ValueType>>
     class JSONArrayFactory
     {
     public:
@@ -642,7 +714,7 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONArrayFactory<T, Container, Validator>::parse_impl(source);
+            return JSONArrayFactory<T, Validator, Container>::parse_impl(source);
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -672,7 +744,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONArrayFactory<T, Container, Validator>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONArrayFactory<T, Validator, Container>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 result += lines[i] + "\n";
@@ -867,7 +939,7 @@ namespace TypeSafeJSON
         }
     };
     
-    /// A validator for the returned JSOMSet type.
+    /// JSONSet Validators
     template <typename Type>
     class DefaultObjectValidator
     {
@@ -875,6 +947,22 @@ namespace TypeSafeJSON
         static bool check(const Type& value)
         {
             return true;
+        }
+    };
+    
+    template <typename Type>
+    class SillyObjectValidator
+    {
+    public:
+        static bool check(const Type& value)
+        {
+            std::vector<long double> list = value.template get<str_to_list_4("list")>();
+            std::string id = value.template get<str_to_list_2("id")>();
+            int sum = 0;
+            for(int i = 0; i < int(list.size()); ++i)
+                sum += list[i];
+            char chr_val = '0' + sum;
+            return id.find(chr_val) != std::string::npos;
         }
     };
     
