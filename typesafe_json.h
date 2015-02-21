@@ -343,7 +343,7 @@ namespace TypeSafeJSON
     };
     
     /// Number Factory to parse JSON Numbers represented as Type. Type will default to long double. This should always work even if Type is integral.
-    template <typename Type = long double, template <typename> class Validation = DefaultNumberValidator>
+    template <typename Type = long double, template <typename> class Validator = DefaultNumberValidator>
     class JSONNumberFactory
     {
     public:
@@ -353,7 +353,7 @@ namespace TypeSafeJSON
         static ValueType parse_impl(Input& input)
         {
             const ValueType value = input.template get_value<ValueType>();
-            if(!Validation<Type>::check(value))
+            if(!Validator<Type>::check(value))
                 throw JSONValidationException();
             
             return value;
@@ -363,7 +363,18 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONNumberFactory<Type, Validation>::parse_impl(source);
+            return JSONNumberFactory<Type, Validator>::parse_impl(source);
+        }
+        
+        static bool is_valid_object(const ValueType& value)
+        {
+            return Validator<ValueType>::check(value);
+        }
+        
+        static void validate(const ValueType& value)
+        {
+            if(!Validator<ValueType>::check(value))
+                throw JSONValidationException();
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -374,7 +385,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONNumberFactory<Type, Validation>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONNumberFactory<Type, Validator>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 if(i != lines.size() - 1)
@@ -410,7 +421,7 @@ namespace TypeSafeJSON
     };
     
     /// String Factory to parse JSON Strings represented as Type. Type will default to std::string
-    template <typename Type = std::string, template <typename> class Validation = DefaultStringValidator>
+    template <typename Type = std::string, template <typename> class Validator = DefaultStringValidator>
     class JSONStringFactory
     {
     public:
@@ -513,7 +524,7 @@ namespace TypeSafeJSON
                 }
             }
             
-            if(!Validation<Type>::check(value))
+            if(!Validator<Type>::check(value))
                 throw JSONValidationException();
             return value;
         }
@@ -522,7 +533,18 @@ namespace TypeSafeJSON
         static ValueType parse(InputType& input)
         {
             InputSource<InputType> source(input);
-            return JSONStringFactory<Type, Validation>::parse_impl(source);
+            return JSONStringFactory<Type, Validator>::parse_impl(source);
+        }
+        
+        static bool is_valid_object(const ValueType& value)
+        {
+            return Validator<ValueType>::check(value);
+        }
+        
+        static void validate(const ValueType& value)
+        {
+            if(!Validator<ValueType>::check(value))
+                throw JSONValidationException();
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -533,7 +555,7 @@ namespace TypeSafeJSON
         static std::string as_json(const ValueType& value)
         {
             std::string result = "";
-            const std::vector<std::string>& lines = JSONStringFactory<Type, Validation>::as_json_lines(value);
+            const std::vector<std::string>& lines = JSONStringFactory<Type, Validator>::as_json_lines(value);
             
             for(int i = 0; i < int(lines.size()); ++i)
                 result += lines[i] + "\n";
@@ -621,6 +643,17 @@ namespace TypeSafeJSON
         {
             InputSource<InputType> source(input);
             return JSONBooleanFactory<Type, Validator>::parse_impl(source);
+        }
+        
+        static bool is_valid_object(const ValueType& value)
+        {
+            return Validator<ValueType>::check(value);
+        }
+        
+        static void validate(const ValueType& value)
+        {
+            if(!Validator<ValueType>::check(value))
+                throw JSONValidationException();
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -715,6 +748,17 @@ namespace TypeSafeJSON
         {
             InputSource<InputType> source(input);
             return JSONArrayFactory<T, Validator, Container>::parse_impl(source);
+        }
+        
+        static bool is_valid_object(const ValueType& value)
+        {
+            return Validator<ValueType>::check(value);
+        }
+        
+        static void validate(const ValueType& value)
+        {
+            if(!Validator<ValueType>::check(value))
+                throw JSONValidationException();
         }
         
         static std::vector<std::string> as_json_lines(const ValueType& value)
@@ -1036,7 +1080,18 @@ namespace TypeSafeJSON
             return JSONObjectFactory<T, Validator>::parse_impl(source);
         }
         
-        static std::vector<std::string> as_json_lines(const ValueType& value)
+        static bool is_valid_object(const ValueType& value)
+        {
+            return Validator<ValueType>::check(value);
+        }
+        
+        static void validate(const ValueType& value)
+        {
+            if(!Validator<ValueType>::check(value))
+                throw JSONValidationException();
+        }
+        
+        static std::vector<std::string> as_json_lines(const T& value)
         {
             std::vector<std::string> result = std::vector<std::string>(1, "{");
             value.as_json_fields(result);
@@ -1045,7 +1100,7 @@ namespace TypeSafeJSON
             return result;
         }
         
-        static std::string as_json(const ValueType& value)
+        static std::string as_json(const T& value)
         {
             std::string result = "";
             const std::vector<std::string>& lines = JSONObjectFactory<T, Validator>::as_json_lines(value);
@@ -1054,6 +1109,64 @@ namespace TypeSafeJSON
                 result += lines[i] + "\n";
             
             return result;
+        }
+    };
+    
+    /// A factory that constructs the result to another type
+    template <typename Type>
+    class DefaultObjectDefinedClassValidator
+    {
+    public:
+        static bool check(const Type& value)
+        {
+            return true;
+        }
+    };
+    
+    template <typename ObjectClass, template <typename> class Validator = DefaultObjectDefinedClassValidator>
+    class JSONObjectToClassFactory
+    {
+    public:
+        typedef ObjectClass ValueType;
+        
+        template <typename Input>
+        static ValueType parse_impl(Input& input)
+        {
+            typename ObjectClass::Definition result = JSONObjectFactory<typename ObjectClass::Definition, Validator>::parse_impl(input);
+            ValueType value = ValueType::Construct(result);
+            
+            if(!Validator<ValueType>::check(value))
+                throw JSONValidationException();
+            
+            return value;
+        }
+        
+        template <typename InputType>
+        static ValueType parse(InputType& input)
+        {
+            InputSource<InputType> source(input);
+            return JSONObjectToClassFactory<ObjectClass, Validator>::parse_impl(source);
+        }
+        
+        static bool is_valid_object(const ValueType& value)
+        {
+            return Validator<ValueType>::check(value.as_object());
+        }
+        
+        static void validate(const ValueType& value)
+        {
+            if(!Validator<ValueType>::check(value.as_object()))
+                throw JSONValidationException();
+        }
+        
+        static std::vector<std::string> as_json_lines(const ValueType& value)
+        {
+            return JSONObjectFactory<typename ObjectClass::Definition, Validator>::as_json_lines(value.as_object());
+        }
+        
+        static std::string as_json(const ValueType& value)
+        {
+            return JSONObjectFactory<typename ObjectClass::Definition, Validator>::as_json(value.as_object());
         }
     };
 }

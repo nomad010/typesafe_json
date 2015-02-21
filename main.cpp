@@ -14,6 +14,34 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 using namespace TypeSafeJSON;
 
+class Derp
+{
+public:
+    typedef JSONSet<NamedType<JSONStringFactory<>, str_to_list_2("id")>, 
+                    NamedType<JSONArrayFactory<JSONNumberFactory<long double>, UniqueArrayValidator>, str_to_list_4("list")>
+                   > Definition;
+                               
+    std::vector<long double> numbers;
+    std::string id;
+    
+    Derp(std::vector<long double> numbers, std::string id) : numbers(numbers), id(id)
+    {
+    }
+    
+    static Derp Construct(Definition object)
+    {
+        return Derp(object.get<str_to_list_4("list")>(), object.get<str_to_list_2("id")>());
+    }
+    
+    Definition as_object()
+    {
+        Definition result;
+        result.set<std::vector<long double>, str_to_list_4("list")>(numbers);
+        result.set<std::string, str_to_list_2("id")>(id);
+        return result;
+    }       
+};
+
 int main(int argc, char** argv)
 {   
     std::string json_string = R"json(
@@ -47,5 +75,9 @@ int main(int argc, char** argv)
     
     for(int i = 0; i < int(json.size()); ++i)
         sum += json[i];
-    printf("%Lf\n", sum); 
+    printf("%Lf\n", sum);
+    
+    typedef JSONObjectToClassFactory<Derp> Billybob;
+    Derp derp = Billybob::parse(json_string);
+    printf("%s %d %Lf %Lf %Lf\n", derp.id.c_str(), int(derp.numbers.size()), derp.numbers[0], derp.numbers[1], derp.numbers[2]);
 }
