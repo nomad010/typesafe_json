@@ -25,3 +25,4 @@ Planned features:
 * C++03 support. This was my intention from the get go, but the implementation of JSONSet put a stop to that.
 * More built-in validators.
 * Some benchmarks.
+* Better parse_against_parameter function. Esssentially this function constructs an if-else ladder via template metaprogramming. But the result is O(n) checks.
