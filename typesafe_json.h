@@ -861,11 +861,11 @@ namespace TypeSafeJSON
         {
         };
         
-        template <char... chrs>
+        template <char... param_chrs>
         class ParameterType
         {
         public:
-            typedef JSONNoSuchParameter Type;
+            typedef JSONNoSuchParameter type;
         };
         
         void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true) const
@@ -883,36 +883,36 @@ namespace TypeSafeJSON
         }
     };
     
-    template <typename HeadType, typename... Rest> 
-    class JSONSet<HeadType, Rest...>
+    template <typename HeadType, char... chrs, typename... Rest> 
+    class JSONSet<NamedType<HeadType, chrs...>, Rest...>
     {
     public:
-        typedef typename HeadType::NameType JSONSetNameType;
-        typename HeadType::Type::ValueType item;
+        typedef HeadType JSONSetNameType;
+        typename JSONSetNameType::ValueType item;
         JSONSet<Rest...> rest;
         
-        template <char... chrs>
+        template <char... param_chrs>
         class ParameterType
         {
         public:
-            typedef typename std::conditional<std::is_same<CompileStr<chrs...>, typename HeadType::NameType>::value, 
-            typename HeadType::Type, 
-            typename JSONSet<Rest...>::template ParameterType<chrs...>::Type>::type Type;
+            static constexpr bool matches_parameter = std::is_same<CompileStr<param_chrs...>, CompileStr<chrs...>>::value;
+            typedef typename JSONSet<Rest...>::template ParameterType<param_chrs...>::type eventual_value;
+            typedef typename std::conditional<matches_parameter, JSONSetNameType, eventual_value>::type type;
         };
         
         template <typename Input>
-        static void parse_against_parameter(JSONSet<HeadType, Rest...>& result, std::string parameter_name, Input& input)
+        static void parse_against_parameter(JSONSet<NamedType<HeadType, chrs...>, Rest...>& result, std::string parameter_name, Input& input)
         {
-            if(parameter_name == HeadType::name)
-                result.item = HeadType::Type::parse_impl(input);
+            if(parameter_name == CompileStr<chrs...>::value)
+                result.item = HeadType::parse_impl(input);
             else
-                return JSONSet<Rest...>::parse_against_parameter(result.rest, parameter_name, input);
+                JSONSet<Rest...>::parse_against_parameter(result.rest, parameter_name, input);
         }
         
         static void find_missing_parameters(std::vector<std::string>& missing_fields, std::unordered_set<std::string> seen_parameters)
         {
-            if(seen_parameters.count(HeadType::name) == 0)
-                missing_fields.push_back(std::string(HeadType::name));
+            if(seen_parameters.count(CompileStr<chrs...>::value) == 0)
+                missing_fields.push_back(std::string(CompileStr<chrs...>::value));
             
             JSONSet<Rest...>::find_missing_parameters(missing_fields, seen_parameters);
         }
@@ -941,28 +941,28 @@ namespace TypeSafeJSON
             }
         };
         
-        template <typename T, char... Chrs>
+        template <typename T, char... param_chrs>
         void get_into(T& val) const
         {
-            copy_if_true<std::is_same<CompileStr<Chrs...>, typename HeadType::NameType>::value, T, typename HeadType::Type::ValueType>::copy(val, item);
-            rest.template get_into<T, Chrs...>(val);
+            copy_if_true<std::is_same<CompileStr<param_chrs...>, CompileStr<chrs...> >::value, T, typename HeadType::ValueType>::copy(val, item);
+            rest.template get_into<T, param_chrs...>(val);
         }
         
-        template <char... Chrs>
-        typename ParameterType<Chrs...>::Type::ValueType get() const
+        template <char... param_chrs>
+        typename ParameterType<param_chrs...>::type::ValueType get() const
         {
-            typename ParameterType<Chrs...>::Type::ValueType val;
-            get_into<typename ParameterType<Chrs...>::Type::ValueType, Chrs...>(val);
+            typename ParameterType<param_chrs...>::type::ValueType val;
+            get_into<typename ParameterType<param_chrs...>::type::ValueType, param_chrs...>(val);
             return val;
         }
         
-        template <typename T, char... Chrs>
+        template <typename T, char... param_chrs>
         void set(T& val)
         {
-            copy_if_true<std::is_same<CompileStr<Chrs...>, typename HeadType::NameType>::value, 
-                         typename HeadType::Type::ValueType, 
+            copy_if_true<std::is_same<CompileStr<param_chrs...>, CompileStr<chrs...>>::value, 
+                         typename HeadType::ValueType, 
                          T>::copy(item, val);
-            rest.template set<T, Chrs...>(val);
+            rest.template set<T, param_chrs...>(val);
         }
         
         void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true) const
@@ -970,8 +970,8 @@ namespace TypeSafeJSON
             if(!is_first)
                 output_lines.back() += ",";
             
-            std::vector<std::string> values = HeadType::Type::as_json_lines(item);
-            std::string field_name = "  \"" + escape_string(HeadType::name) + "\": ";
+            std::vector<std::string> values = HeadType::as_json_lines(item);
+            std::string field_name = "  \"" + escape_string(CompileStr<chrs...>::value) + "\": ";
             std::string first_line = field_name + values[0];
             output_lines.push_back(first_line);
             
