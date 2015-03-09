@@ -19,6 +19,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include <regex>
 #include "variadic_string.h"
 #include "format_string.h"
+#include <cstring>
+#include <typeinfo>
+
 
 /** The actual voodoo is here. **/ 
 
@@ -799,64 +802,374 @@ namespace TypeSafeJSON
     
     /** Object Implementation - this part's the killer. **/
     
-    /// Tracks parameters for finding duplicates and missing fields.
-    /// This is a separate class for future expansion, it was a class in the past, it worked, so I left.
-    class ObjectParameterTracker
+    /** Implementation required for binary search tree of fields. **/
+    template <int switcher, typename Negative, typename Zero, typename Positive>
+    class Conditional3Way
+    {
+    };
+    
+    template <typename Negative, typename Zero, typename Positive>
+    class Conditional3Way<-1, Negative, Zero, Positive>
     {
     public:
-        std::unordered_set<std::string> parameters;
-        
-        template <typename Input>
-        void add_parameter(const std::string& parameter, Input& input)
+        typedef Negative type;
+    };
+    
+    template <typename Negative, typename Zero, typename Positive>
+    class Conditional3Way<0, Negative, Zero, Positive>
+    {
+    public:
+        typedef Zero type;
+    };
+    
+    template <typename Negative, typename Zero, typename Positive>
+    class Conditional3Way<1, Negative, Zero, Positive>
+    {
+    public:
+        typedef Positive type;
+    };
+    
+    template<bool truth, typename T, typename U> 
+    class copy_if_true
+    {
+    };
+    
+    template<typename T, typename U> 
+    class copy_if_true<true, T, U>
+    {
+    public:
+        static void copy(T& output, const U& input)
         {
-            bool insert_happened = parameters.insert(parameter).second;
-            
-            if(!insert_happened)
-                throw BadJSONFormatException("The following field was duplicated: " + parameter, input.tell()); 
-        }
-        
-        template <typename T, typename Input>
-        void finish(T& object, Input& input)
-        {
-            std::vector<std::string> missing_fields;
-            T::find_missing_parameters(missing_fields, parameters);
-            
-            if(missing_fields.empty())
-                return;
-            
-            std::string fields = "";
-            for(int i = 0; i < int(missing_fields.size()) - 1; ++i)
-                fields += missing_fields[i] + ", ";
-            fields += missing_fields.back();
-            
-            throw BadJSONFormatException("The following fields were not found in the input: " + fields, input.tell());
+            output = input;
         }
     };
     
-    /// JSONSet implementation, compile-time name to field mapping. Uses NamedType as its template arguments.
-    template <typename... Args> 
-    class JSONSet;
-    
-    template <> 
-    class JSONSet<>
+    template<typename T, typename U> 
+    class copy_if_true<false, T, U>
     {
     public:
+        static void copy(T& output, const U& input)
+        {
+        }
+    };
+    
+    template <typename... Args>
+    class JSONSetFieldCollection
+    {
+    };
+    
+    template <>
+    class JSONSetFieldCollection<>
+    {
+    public:
+        static constexpr int sz = 0;
+        
+        static std::string to_string()
+        {
+            return "";
+        }
+    };
+    
+    template <typename T, char... vs, typename... Args>
+    class JSONSetFieldCollection<NamedType<T, vs...>, Args...>
+    {
+    public:
+        static constexpr int sz = 1 + sizeof...(Args);
+        
+        static std::string to_string()
+        {
+            return "<" + std::string(CompileStr<vs...>::value) + ": " + typeid(T).name() + ">\n" + JSONSetFieldCollection<Args...>::to_string();
+        }
+    };
+    
+    template <typename FieldA, typename FieldB> 
+    class Concat
+    {
+    };
+
+    template <typename... ATypes, typename... BTypes>
+    class Concat<JSONSetFieldCollection<ATypes...>, JSONSetFieldCollection<BTypes...>>
+    {
+    public:
+        typedef JSONSetFieldCollection<ATypes..., BTypes...> type;
+    };
+    
+    template <typename FieldA, typename FieldB>
+    class FieldComparatorHelper
+    {
+    };
+    
+    template <typename A, typename B>
+    class FieldComparatorHelper<NamedType<A>, NamedType<B>>
+    {
+    public:
+        static constexpr int result = 0;
+    };
+    
+    template <typename A, typename B, char vbfirst, char... vbs>
+    class FieldComparatorHelper<NamedType<A>, NamedType<B, vbfirst, vbs...>>
+    {
+    public:
+        static constexpr int result = -1;
+    };
+    
+    template <typename A, char vafirst, char... vas, typename B>
+    class FieldComparatorHelper<NamedType<A, vafirst, vas...>, NamedType<B>>
+    {
+    public:
+        static constexpr int result = 1;
+    };
+    
+    template <typename A, char matching, char... vas, typename B, char... vbs>
+    class FieldComparatorHelper<NamedType<A, matching, vas...>, NamedType<B, matching, vbs...>>
+    {
+    public:
+        static constexpr int result = FieldComparatorHelper<NamedType<A, vas...>, NamedType<B, vbs...>>::result;
+    };
+    
+    template <typename A, char vafirst, char... vas, typename B, char vbfirst, char... vbs>
+    class FieldComparatorHelper<NamedType<A, vafirst, vas...>, NamedType<B, vbfirst, vbs...>>
+    {
+    public:
+        static constexpr int result = vafirst < vbfirst ? -1 : 1;
+    };
+    
+    template <typename Field, char... vs>
+    class FieldNameReverser
+    {
+    };
+    
+    template <typename T, char in_first, char... in_vs, char... out_vs>
+    class FieldNameReverser<NamedType<T, in_first, in_vs...>, out_vs...>
+    {
+    public:
+        typedef typename FieldNameReverser<NamedType<T, in_vs...>, out_vs..., in_first>::result result;
+    };
+    
+    template <typename T, char... out_vs>
+    class FieldNameReverser<NamedType<T>, out_vs...>
+    {
+    public:
+        typedef NamedType<T, out_vs...> result;
+    };
+    
+    template <typename FieldA, typename FieldB>
+    class FieldComparator
+    {
+    public:
+        static constexpr int result = FieldComparatorHelper<typename FieldNameReverser<FieldA>::result, 
+                                                            typename FieldNameReverser<FieldB>::result>::result;
+    };
+    
+    template <int cur, typename Left, typename Remainder>
+    class MiddleSplitterHelper
+    {
+    };
+    
+    template <typename... LeftFields, typename First, typename... Remainder>
+    class MiddleSplitterHelper<0, JSONSetFieldCollection<LeftFields...>, JSONSetFieldCollection<First, Remainder...>>
+    {
+    public:
+        typedef JSONSetFieldCollection<LeftFields...> left;
+        typedef First middle;
+        typedef JSONSetFieldCollection<Remainder...> right;
+    };
+    
+    template <int cur, typename... LeftFields, typename First, typename... Remainder>
+    class MiddleSplitterHelper<cur, JSONSetFieldCollection<LeftFields...>, JSONSetFieldCollection<First, Remainder...>>
+    {
+    public:
+        typedef MiddleSplitterHelper<cur - 1, JSONSetFieldCollection<LeftFields..., First>, JSONSetFieldCollection<Remainder...>> helper;
+        typedef typename helper::left left;
+        typedef typename helper::middle middle;
+        typedef typename helper::right right;
+    };
+    
+    template <typename Fields>
+    class MiddleSplitter
+    {
+    };
+    
+    template <typename First, typename... Rest>
+    class MiddleSplitter<JSONSetFieldCollection<First, Rest...>>
+    {
+    public:
+        typedef MiddleSplitterHelper<(sizeof...(Rest) + 1)/2, JSONSetFieldCollection<>, JSONSetFieldCollection<First, Rest...>> helper;
+        typedef typename helper::left left;
+        typedef typename helper::middle middle;
+        typedef typename helper::right right;
+    };
+    
+    template <typename Pivot, typename Fields>
+    class Partition
+    {
+    };
+    
+    template <typename PivotT, char... pivotvs, typename FirstT, char... firstvs, typename... Fields>
+    class Partition<NamedType<PivotT, pivotvs...>, JSONSetFieldCollection<NamedType<FirstT, firstvs...>, Fields...>>
+    {
+    public:
+        typedef Partition<NamedType<PivotT, pivotvs...>, JSONSetFieldCollection<Fields...>> next;
+        static constexpr int cmp = FieldComparator<NamedType<PivotT, pivotvs...>, NamedType<FirstT, firstvs...>>::result;
+        
+        typedef typename std::conditional<cmp == 1, JSONSetFieldCollection<NamedType<FirstT, firstvs...>>, JSONSetFieldCollection<>>::type cur_lt;
+        typedef typename std::conditional<cmp == 0, JSONSetFieldCollection<NamedType<FirstT, firstvs...>>, JSONSetFieldCollection<>>::type cur_eq;
+        typedef typename std::conditional<cmp == -1, JSONSetFieldCollection<NamedType<FirstT, firstvs...>>, JSONSetFieldCollection<>>::type cur_gt;
+        
+        typedef typename Concat<typename next::lt, cur_lt>::type lt;
+        typedef typename Concat<typename next::eq, cur_eq>::type eq;
+        typedef typename Concat<typename next::gt, cur_gt>::type gt;
+    };
+    
+    template <typename PivotT, char... pivotvs>
+    class Partition<NamedType<PivotT, pivotvs...>, JSONSetFieldCollection<>>
+    {
+    public:
+        typedef JSONSetFieldCollection<> lt;
+        typedef JSONSetFieldCollection<> eq;
+        typedef JSONSetFieldCollection<> gt;
+    };
+    
+    template <typename Fields>
+    class FieldSorter
+    {
+    public:
+        typedef typename MiddleSplitter<Fields>::middle Pivot;
+        typedef Partition<Pivot, Fields> partition;
+        typedef typename Concat<typename FieldSorter<typename partition::lt>::type, typename partition::eq>::type _sub;
+        typedef typename Concat<_sub, typename FieldSorter<typename partition::gt>::type>::type type;
+    };
+    
+    template <>
+    class FieldSorter<JSONSetFieldCollection<>>
+    {
+    public:
+        typedef JSONSetFieldCollection<> type;
+    };
+    
+    template <typename Fields>
+    class FieldTreeHelper
+    {
+    public:
+        typedef typename MiddleSplitter<Fields>::left LeftTree;
+        typedef typename MiddleSplitter<Fields>::middle Root;
+        typedef typename MiddleSplitter<Fields>::right RightTree;
+        
+        FieldTreeHelper<LeftTree> left;
+        typename Root::Type::ValueType root;
+        FieldTreeHelper<RightTree> right;
+        
+        template <char... param_chrs>
+        class ParameterType
+        {
+        public:
+            static constexpr int cmp_val = FieldComparator<NamedType<int, param_chrs...>, Root>::result;
+            typedef FieldTreeHelper<LeftTree> lt;
+            typedef FieldTreeHelper<RightTree> gt;
+            class Eq
+            {
+            public:
+                class type
+                {
+                public:
+                    typedef typename Root::Type::ValueType Type;
+                };
+            };
+            
+            typedef typename Conditional3Way<cmp_val, 
+                                             typename lt::template ParameterType<param_chrs...>,
+                                             Eq,
+                                             typename gt::template ParameterType<param_chrs...>
+                                            >::type::type type;
+        };
+        
         template <typename Input>
-        static void parse_against_parameter(JSONSet<>& result, std::string parameter_name, Input& input)
+        void parse_against_parameter(std::string parameter_name, Input& input)
         {
-            throw BadJSONFormatException("Parameter was not found in structure: " + parameter_name, input.tell());
+            int cmp_val = strcmp(parameter_name.c_str(), Root::NameType::value);
+            if(cmp_val == 0)
+                root = Root::Type::parse_impl(input);
+            else if(cmp_val < 0)
+                left.parse_against_parameter(parameter_name, input);
+            else if(cmp_val > 0)
+                right.parse_against_parameter(parameter_name, input);
         }
         
-        static void find_missing_parameters(std::vector<std::string>& missing_fields, std::unordered_set<std::string> seen_parameters)
+        void path(std::string parameter_name)
         {
+            printf("'%s' vs '%s'\n", parameter_name.c_str(), Root::NameType::value);
+            
+            int cmp_val = strcmp(parameter_name.c_str(), Root::NameType::value);
+            if(cmp_val == 0)
+                printf("Hit\n");
+            else if(cmp_val < 0)
+                left.path(parameter_name);
+            else if(cmp_val > 0)
+                right.path(parameter_name);
         }
         
-        template <typename Param>
-        void get(std::string parameter_name, Param& parameter) const 
+        template <char... param_chrs>
+        typename ParameterType<param_chrs...>::type::Type get() const
         {
-            throw std::logic_error("Parameter not found: " + parameter_name);
+            typename ParameterType<param_chrs...>::type::Type val;
+            get_into<typename ParameterType<param_chrs...>::type::Type, param_chrs...>(val);
+            return val;
         }
         
+        template <typename T, char... param_chrs>
+        void get_into(T& val) const
+        {
+            copy_if_true<std::is_same<CompileStr<param_chrs...>, typename Root::NameType>::value, T, typename Root::Type::ValueType>::copy(val, root);
+            
+            int cmp_val = strcmp(CompileStr<param_chrs...>::value, Root::NameType::value);
+            if(cmp_val < 0)
+                left.template get_into<T, param_chrs...>(val);
+            else if(cmp_val > 0)
+                right.template get_into<T, param_chrs...>(val);
+        }
+        
+        template <typename T, char... param_chrs>
+        void set(T& val)
+        {
+            copy_if_true<std::is_same<CompileStr<param_chrs...>, typename Root::NamedType>::value, typename Root::Type::ValueType, T>::copy(root, val);
+            
+            int cmp_val = strcmp(CompileStr<param_chrs...>::value, Root::NameType::value);
+            if(cmp_val < 0)
+                left.template set<T, param_chrs...>(val);
+            else if(cmp_val > 0)
+                right.template set<T, param_chrs...>(val);
+        }
+        
+        bool is_empty() const
+        {
+            return false;
+        }
+        
+        void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true) const
+        {
+            left.as_json_fields(output_lines, is_first);
+            if(!left.is_empty())
+                is_first = false;
+            
+            if(!is_first)
+                output_lines.back() += ",";
+            
+            std::vector<std::string> values = Root::Type::as_json_lines(root);
+            std::string field_name = "  \"" + escape_string(Root::name) + "\": ";
+            std::string first_line = field_name + values[0];
+            output_lines.push_back(first_line);
+            
+            for(int i = 1; i < int(values.size()); ++i)
+                output_lines.push_back("  " + values[i]);
+            
+            right.as_json_fields(output_lines, false);
+        }
+    };
+    
+    template <>
+    class FieldTreeHelper<JSONSetFieldCollection<>>
+    {
+    public:
         class JSONNoSuchParameter
         {
         };
@@ -868,117 +1181,78 @@ namespace TypeSafeJSON
             typedef JSONNoSuchParameter type;
         };
         
-        void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true) const
+        template <typename Input>
+        void parse_against_parameter(std::string parameter_name, Input& input)
         {
+            throw BadJSONFormatException("Parameter was not found in structure: " + parameter_name, input.tell());
         }
         
-        template <typename T, char... Chrs>
+        void path(std::string parameter_name)
+        {
+            printf("Miss\n");
+        }
+        
+        template <char... param_chrs>
+        typename ParameterType<param_chrs...>::type::Type get() const
+        {
+            throw std::logic_error("Parameter not found: " + CompileStr<param_chrs...>::value);
+            typename ParameterType<param_chrs...>::type::Type val;
+            get_into<typename ParameterType<param_chrs...>::type::Type, param_chrs...>(val);
+            return val;
+        }
+        
+        template <typename T, char... param_chrs>
         void get_into(T& val) const
         {
         }
         
-        template <typename T, char... Chrs>
+        template <typename T, char... param_chrs>
         void set(T& val)
+        {
+            
+        }
+        
+        bool is_empty() const
+        {
+            return true;
+        }
+        
+        void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true) const
+        {
+        }
+    };
+    
+    template <typename Fields>
+    class FieldTree : public FieldTreeHelper<typename FieldSorter<Fields>::type>
+    {
+    };
+    /** End of Field BST Implementation **/
+    
+    /// JSONSet implementation, compile-time name to field mapping. Uses NamedType as its template arguments.
+    template <typename... Args> 
+    class JSONSet;
+    
+    template <> 
+    class JSONSet<> : FieldTree<JSONSetFieldCollection<>>
+    {
+    public:
+        /// find_missing_parameters is common
+        static void find_missing_parameters(std::vector<std::string>& missing_fields, std::unordered_set<std::string> seen_parameters)
         {
         }
     };
     
     template <typename HeadType, char... chrs, typename... Rest> 
-    class JSONSet<NamedType<HeadType, chrs...>, Rest...>
+    class JSONSet<NamedType<HeadType, chrs...>, Rest...> : public FieldTree<JSONSetFieldCollection<NamedType<HeadType, chrs...>, Rest...>>
     {
     public:
-        typedef HeadType JSONSetNameType;
-        typename JSONSetNameType::ValueType item;
-        JSONSet<Rest...> rest;
-        
-        template <char... param_chrs>
-        class ParameterType
-        {
-        public:
-            static constexpr bool matches_parameter = std::is_same<CompileStr<param_chrs...>, CompileStr<chrs...>>::value;
-            typedef typename JSONSet<Rest...>::template ParameterType<param_chrs...>::type eventual_value;
-            typedef typename std::conditional<matches_parameter, JSONSetNameType, eventual_value>::type type;
-        };
-        
-        template <typename Input>
-        static void parse_against_parameter(JSONSet<NamedType<HeadType, chrs...>, Rest...>& result, std::string parameter_name, Input& input)
-        {
-            if(parameter_name == CompileStr<chrs...>::value)
-                result.item = HeadType::parse_impl(input);
-            else
-                JSONSet<Rest...>::parse_against_parameter(result.rest, parameter_name, input);
-        }
-        
+        /// find_missing_parameters is common
         static void find_missing_parameters(std::vector<std::string>& missing_fields, std::unordered_set<std::string> seen_parameters)
         {
             if(seen_parameters.count(CompileStr<chrs...>::value) == 0)
                 missing_fields.push_back(std::string(CompileStr<chrs...>::value));
             
             JSONSet<Rest...>::find_missing_parameters(missing_fields, seen_parameters);
-        }
-        
-        template<bool truth, typename T, typename U> 
-        class copy_if_true
-        {
-        };
-        
-        template<typename T, typename U> 
-        class copy_if_true<true, T, U>
-        {
-        public:
-            static void copy(T& output, const U& input)
-            {
-                output = input;
-            }
-        };
-        
-        template<typename T, typename U> 
-        class copy_if_true<false, T, U>
-        {
-        public:
-            static void copy(T& output, const U& input)
-            {
-            }
-        };
-        
-        template <typename T, char... param_chrs>
-        void get_into(T& val) const
-        {
-            copy_if_true<std::is_same<CompileStr<param_chrs...>, CompileStr<chrs...> >::value, T, typename HeadType::ValueType>::copy(val, item);
-            rest.template get_into<T, param_chrs...>(val);
-        }
-        
-        template <char... param_chrs>
-        typename ParameterType<param_chrs...>::type::ValueType get() const
-        {
-            typename ParameterType<param_chrs...>::type::ValueType val;
-            get_into<typename ParameterType<param_chrs...>::type::ValueType, param_chrs...>(val);
-            return val;
-        }
-        
-        template <typename T, char... param_chrs>
-        void set(T& val)
-        {
-            copy_if_true<std::is_same<CompileStr<param_chrs...>, CompileStr<chrs...>>::value, 
-                         typename HeadType::ValueType, 
-                         T>::copy(item, val);
-            rest.template set<T, param_chrs...>(val);
-        }
-        
-        void as_json_fields(std::vector<std::string>& output_lines, bool is_first = true) const
-        {
-            if(!is_first)
-                output_lines.back() += ",";
-            
-            std::vector<std::string> values = HeadType::as_json_lines(item);
-            std::string field_name = "  \"" + escape_string(CompileStr<chrs...>::value) + "\": ";
-            std::string first_line = field_name + values[0];
-            output_lines.push_back(first_line);
-            
-            for(int i = 1; i < int(values.size()); ++i)
-                output_lines.push_back("  " + values[i]);
-            
-            rest.as_json_fields(output_lines, false);
         }
     };
     
@@ -1020,7 +1294,7 @@ namespace TypeSafeJSON
         static ValueType parse_impl(Input& input)
         {
             T value;
-            ObjectParameterTracker parameter_tracker;
+            std::unordered_set<std::string> parameter_set;
             
             eat_whitespace(input);
             char expected_brace = input.getc();
@@ -1052,7 +1326,10 @@ namespace TypeSafeJSON
                 eat_whitespace(input);
                 
                 std::string field_name = JSONStringFactory<std::string>::parse_impl(input);
-                parameter_tracker.add_parameter(field_name, input);
+                
+                bool insert_happened = parameter_set.insert(field_name).second;
+                if(!insert_happened)
+                    throw BadJSONFormatException("The following field was duplicated: " + field_name, input.tell()); 
                 
                 eat_whitespace(input);
                 char expected_colon = input.getc();
@@ -1061,11 +1338,22 @@ namespace TypeSafeJSON
                 if(expected_colon != ':')
                     throw BadJSONFormatException("A colon was expected.", input.tell());
                 
-                T::parse_against_parameter(value, field_name, input);
+                value.parse_against_parameter(field_name, input);
                 
                 is_first_run = false;
             }
-            parameter_tracker.finish(value, input);
+            std::vector<std::string> missing_fields;
+            T::find_missing_parameters(missing_fields, parameter_set);
+            
+            if(!missing_fields.empty())
+            {
+                std::string fields = "";
+                for(int i = 0; i < int(missing_fields.size()) - 1; ++i)
+                    fields += missing_fields[i] + ", ";
+                fields += missing_fields.back();
+                
+                throw BadJSONFormatException("The following fields were not found in the input: " + fields, input.tell());
+            }
             
             if(!Validator<T>::check(value))
                 throw JSONValidationException();
